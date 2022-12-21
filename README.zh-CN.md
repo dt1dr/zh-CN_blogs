@@ -1,5 +1,5 @@
 # 稻田里的人的个人博客
-<a href="/dt1dr/dt1dr.github.io/main/README.md">English</a> / 简体中文
+<a href="/dt1dr/dt1dr.github.io/README.md">English</a> / 简体中文
 
 
 ## 简介
