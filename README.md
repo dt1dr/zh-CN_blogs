@@ -1,5 +1,5 @@
 # dt1dr 's Personal Blog 
-English / <a href="/dt1dr/dt1dr.github.io/README.zh-CN.md">简体中文</a> 
+English / [简体中文](/README.zh-CN.md)
 
 
 ## Introduction
