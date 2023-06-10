@@ -7,4 +7,5 @@ A static blog page based on Github pages + hexo(frame) + butterfly(theme). Here 
 **Currently, it only supports Simplified Chinese!**
 
 ## Site URL
-https://dt1dr.github.io
+
+https://dt1dr.github.io/zh-CN_blogs
