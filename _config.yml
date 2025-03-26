@@ -101,7 +101,7 @@ theme: butterfly
 ## Docs: https://hexo.io/docs/one-command-deployment
 deploy:
   type: git
-  repository: https://github.com/dt1dr/zh-CN_blogs.git
+  repository: git@github.com:dt1dr/zh-CN_blogs.git
   branch: gh-pages
   message: "auto deploy"
   
