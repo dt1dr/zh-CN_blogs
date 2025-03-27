@@ -3,7 +3,7 @@ title: C++学习：分别编译与makefile
 date: 2023-11-01 00:10:12
 tags: C++
 categories: 编程
-cover: ./img/CppCover.png
+cover: https://s2.loli.net/2023/02/01/J2Pv7bFM6YCE8AO.png
 ---
 
 
