@@ -1,7 +1,7 @@
 ---
 title: C++学习：分别编译与makefile
 date: 2023-11-01 00:10:12
-tags: C++
+tags: [C++, Build System, Make]
 categories: 编程
 cover: https://s2.loli.net/2023/02/01/J2Pv7bFM6YCE8AO.png
 ---

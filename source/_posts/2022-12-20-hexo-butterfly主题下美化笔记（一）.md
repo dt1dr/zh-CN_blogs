@@ -1,8 +1,8 @@
 ---
 title: hexo+butterfly主题下美化笔记（一）
 date: 2022-12-20 20:15:57
-tags: 外观自定义
-categories: hexo
+tags: [Hexo, Butterfly, Theme Customization]
+categories: 编程
 cover: https://s2.loli.net/2022/12/20/krHvmQJnU48Kgz6.png
 ---
 

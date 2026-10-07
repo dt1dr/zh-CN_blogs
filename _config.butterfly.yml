@@ -61,7 +61,8 @@ social:
 favicon: /img/favicon.png
 
 avatar:
-  img: https://s2.loli.net/2022/12/17/hFKq3RW2ONUgGSl.png
+  img: '/img/avatar.jpg' 
+  # The avatar_old.png: https://s2.loli.net/2022/12/17/hFKq3RW2ONUgGSl.png
   effect: false
 
 # Disable all banner images
@@ -287,7 +288,7 @@ aside:
     category: true
   card_author:
     enable: true
-    description: 计算机科学与工程专业，大三在读
+    description: 计算机科学专业，ML Infra爱好者，数学门外汉
     button:
       enable: true
       icon: fab fa-github
