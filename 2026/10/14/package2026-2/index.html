@@ -1,0 +1,863 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent | Dfexsite</title><meta name="author" content="dt1dr"><meta name="copyright" content="dt1dr"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="前言上一篇文章主要讨论如何在 macOS &#x2F; Linux 上安装环境工具、管理项目依赖以及维护缓存。到这里为止，似乎只要提交了 uv.lock 或 pixi.lock，别人就能复现你的工作环境。 但是经常复现别人代码的孩子都知道：依赖可求解、环境可安装、程序能运行其实是三个不同的挑战。特别是还要在特定 GPU 服务器、HPC 集群和 Agent 自动执行场景中。想要配置好环境其实很多东西">
+<meta property="og:type" content="article">
+<meta property="og:title" content="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent">
+<meta property="og:url" content="https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-2/index.html">
+<meta property="og:site_name" content="Dfexsite">
+<meta property="og:description" content="前言上一篇文章主要讨论如何在 macOS &#x2F; Linux 上安装环境工具、管理项目依赖以及维护缓存。到这里为止，似乎只要提交了 uv.lock 或 pixi.lock，别人就能复现你的工作环境。 但是经常复现别人代码的孩子都知道：依赖可求解、环境可安装、程序能运行其实是三个不同的挑战。特别是还要在特定 GPU 服务器、HPC 集群和 Agent 自动执行场景中。想要配置好环境其实很多东西">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://dt1dr.github.io/zh-CN_blogs/img/DevOpsCover.png">
+<meta property="article:published_time" content="2026-10-15T04:50:46.000Z">
+<meta property="article:modified_time" content="2026-10-15T06:02:09.874Z">
+<meta property="article:author" content="dt1dr">
+<meta property="article:tag" content="Agent">
+<meta property="article:tag" content="CUDA">
+<meta property="article:tag" content="DevOps">
+<meta property="article:tag" content="Environment">
+<meta property="article:tag" content="SLURM">
+<meta property="article:tag" content="Tooling">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://dt1dr.github.io/zh-CN_blogs/img/DevOpsCover.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent",
+  "url": "https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-2/",
+  "image": "https://dt1dr.github.io/zh-CN_blogs/img/DevOpsCover.png",
+  "datePublished": "2026-10-15T04:50:46.000Z",
+  "dateModified": "2026-10-15T06:02:09.874Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "dt1dr",
+      "url": "https://dt1dr.github.io/zh-CN_blogs"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/zh-CN_blogs/img/favicon.png"><link rel="canonical" href="https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-2/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/zh-CN_blogs/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        const data = { value }
+
+        if (ttl != null) {
+          data.expiry = Date.now() + ttl * 86400000
+        }
+
+        localStorage.setItem(key, JSON.stringify(data))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return
+
+        try {
+          const data = JSON.parse(itemStr)
+
+          if (data.expiry && Date.now() > data.expiry) {
+            localStorage.removeItem(key)
+            return
+          }
+
+          return data.value
+        } catch {
+          localStorage.removeItem(key)
+        }
+      }
+    }
+
+    const scriptCache = new Map()
+    const cssCache = new Map()
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => {
+        if (scriptCache.has(url)) {
+          return scriptCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+
+          script.src = url
+          script.async = true
+
+          for (const key in attr) {
+            script.setAttribute(key, attr[key])
+          }
+
+          script.onload = resolve
+          script.onerror = reject
+
+          document.head.appendChild(script)
+        })
+
+        scriptCache.set(url, promise)
+
+        return promise
+      },
+      getCSS: (url, id) => {
+        if (cssCache.has(url)) {
+          return cssCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const link = document.createElement('link')
+
+          link.rel = 'stylesheet'
+          link.href = url
+
+          if (id) {
+            link.id = id
+          }
+
+          link.onload = resolve
+          link.onerror = reject
+
+          document.head.appendChild(link)
+        })
+
+        cssCache.set(url, promise)
+
+        return promise
+      },
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]')
+      const activateDarkMode = () => {
+        document.documentElement.dataset.theme = 'dark'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.dataset.theme = 'light'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/zh-CN_blogs/',
+  algolia: undefined,
+  localSearch: {"path":"/zh-CN_blogs/search.json","preload":false,"top_n_per_article":1,"unescape":false,"pagination":{"enable":true,"hitsPerPage":8},"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":false,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'null',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><meta name="generator" content="Hexo 8.1.2"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/zh-CN_blogs/img/avatar.jpg" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/zh-CN_blogs/archives/"><div class="headline">文章</div><div class="length-num">14</div></a><a href="/zh-CN_blogs/tags/"><div class="headline">标签</div><div class="length-num">40</div></a><a href="/zh-CN_blogs/categories/"><div class="headline">分类</div><div class="length-num">6</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-folder"></i><span> 归档</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/zh-CN_blogs/archives/"><i class="fa-fw fas fa-archive"></i><span> 时间轴</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/about/"><i class="fa-fw fas fa-heart"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/zh-CN_blogs/img/DevOpsCover.png);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/zh-CN_blogs/"><span class="site-name">Dfexsite</span></a><a class="nav-page-title" href="/zh-CN_blogs/"><span class="site-name">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</span><span class="site-name"><i class="fa-solid fa-circle-arrow-left"></i><span>  返回首页</span></span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-folder"></i><span> 归档</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/zh-CN_blogs/archives/"><i class="fa-fw fas fa-archive"></i><span> 时间轴</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/about/"><i class="fa-fw fas fa-heart"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2026-10-15T04:50:46.000Z" title="发表于 2026-10-14 23:50:46">2026-10-14</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2026-10-15T06:02:09.874Z" title="更新于 2026-10-15 01:02:09">2026-10-15</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/zh-CN_blogs/categories/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/">开发工具</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">浏览量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>上一篇文章主要讨论如何在 macOS &#x2F; Linux 上安装环境工具、管理项目依赖以及维护缓存。到这里为止，似乎只要提交了 <code>uv.lock</code> 或 <code>pixi.lock</code>，别人就能复现你的工作环境。</p>
+<p>但是经常复现别人代码的孩子都知道：<strong>依赖可求解、环境可安装、程序能运行</strong>其实是三个不同的挑战。特别是还要在特定 GPU 服务器、HPC 集群和 Agent 自动执行场景中。想要配置好环境其实很多东西已经超出包管理器的控制边界之外，造成额外的精神伤害。下面从宿主机、共享文件系统与进程生命周期三个角度讨论。</p>
+<hr>
+<h3 id="求解成功的假象：包管理器与宿主机的边界"><a href="#求解成功的假象：包管理器与宿主机的边界" class="headerlink" title="求解成功的假象：包管理器与宿主机的边界"></a>求解成功的假象：包管理器与宿主机的边界</h3><p>包管理器的依赖求解，从算法上看是一个<a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Boolean_satisfiability_problem">布尔可满足性问题</a>（boolean SATisfiability problem,SAT）。包管理器一版会内置一个求解器（SAT Solver）。但是能够算出来一个解，只能证明一件事：<strong>在包索引元数据所描述的依赖图里，存在满足版本与平台约束的候选组合</strong>。真实的运行时仍然受制于操作系统内核、动态链接器以及驱动栈的强约束。</p>
+<pre><code class="highlight mermaid">flowchart TB
+    subgraph HOST[&quot;01 · Host System ｜宿主机依赖&quot;]
+        direction LR
+        K[&quot;Linux Kernel&quot;]
+        D[&quot;NVIDIA Driver&quot;]
+        GL[&quot;glibc / ld-linux.so&quot;]
+    end
+
+    subgraph USER[&quot;02 · User Space ｜部分可锁定&quot;]
+        direction LR
+        CT[&quot;CUDA Toolkit / nvcc&quot;]
+        RT[&quot;CUDA Runtime&quot;]
+        CXX[&quot;libstdc++.so.6&quot;]
+    end
+
+    subgraph APP_LAYER[&quot;03 · Application ｜应用层&quot;]
+        direction TB
+        APP[&quot;Python / CUDA Extension&quot;]
+    end
+
+    K --&gt;|&quot;内核模块接口&quot;| D
+    D --&gt;|&quot;Driver API&quot;| RT
+    GL --&gt;|&quot;动态链接 / ABI&quot;| CXX
+
+    RT --&gt;|&quot;运行时依赖&quot;| APP
+    CXX --&gt;|&quot;C++ ABI&quot;| APP
+    CT -.-&gt;|&quot;编译扩展时需要&quot;| APP
+
+    classDef host fill:#E8E7E3,stroke:#A8A69F,color:#45443F,stroke-width:1.5px
+    classDef driver fill:#465E53,stroke:#465E53,color:#FFFFFF,stroke-width:1.5px
+    classDef runtime fill:#E2E8F0,stroke:#8293AD,color:#394D68,stroke-width:1.5px
+    classDef app fill:#534568,stroke:#534568,color:#FFFFFF,stroke-width:2px
+
+    class K,GL host
+    class D driver
+    class CT,RT,CXX runtime
+    class APP app
+
+    style HOST fill:#F7F7F5,stroke:#C6C4BE,color:#45443F
+    style USER fill:#F5F7FA,stroke:#BCC7D7,color:#394D68
+    style APP_LAYER fill:#F8F6FA,stroke:#C9BED4,color:#534568
+
+    linkStyle default stroke:#92979D,stroke-width:1.4px</code></pre>
+
+<h4 id="常见-CUDA-ABI-诊断表"><a href="#常见-CUDA-ABI-诊断表" class="headerlink" title="常见 CUDA &#x2F; ABI 诊断表"></a>常见 CUDA &#x2F; ABI 诊断表</h4><p>下面这个表是一些常见报错。题外话：GPT 5.5 - 6.1 的几个版本在目前往往被认为“过度严谨”，“过度防御性”，“过度保守谨慎”。所以特别擅长设计执行“进一步验证”类型的分析和测试。不知道是不是因为针对解决前沿数学问题导致的bias injection。</p>
+<table>
+<thead>
+<tr>
+<th>报错现象</th>
+<th>常见诱因</th>
+<th>需要进一步验证的地方</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>CUDA driver version is insufficient...</code></td>
+<td>宿主机驱动与应用要求不兼容</td>
+<td>核对 Driver、CUDA Runtime 和框架的实际版本组合</td>
+</tr>
+<tr>
+<td><code>torch.cuda.is_available() == False</code></td>
+<td>CPU-only 安装、驱动不可用、GPU 未分配等</td>
+<td>先检查 <code>nvidia-smi</code>，再确认 PyTorch 构建及设备可见性；不能只凭一个返回值断言求解器回落了 CPU Wheel</td>
+</tr>
+<tr>
+<td><code>GLIBCXX_3.4.xx not found</code></td>
+<td>运行时加载到的 <code>libstdc++</code> 不满足所需符号版本</td>
+<td>检查实际动态链接路径、工具链与 <code>LD_LIBRARY_PATH</code>，不一定是系统库单方面的问题</td>
+</tr>
+</tbody></table>
+<p>Pixi 的锁文件能够描述项目依赖，但不能替代宿主机驱动、GPU 资源及系统 ABI 的兼容性检查。</p>
+<p>在 GPU 节点上，可以先检查：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 检查 GPU 驱动与设备</span></span><br><span class="line">nvidia-smi</span><br><span class="line"></span><br><span class="line"><span class="comment"># 检查系统与平台</span></span><br><span class="line"><span class="built_in">uname</span> -m</span><br><span class="line">ldd --version  <span class="comment"># Linux/glibc 系统；macOS 不适用</span></span><br></pre></td></tr></table></figure>
+
+<p>需要区分：</p>
+<ul>
+<li>NVIDIA Driver：由宿主机或集群管理员提供，内核驱动与用户态组件共同影响兼容性。</li>
+<li>CUDA Runtime：可能由项目环境或框架的二进制依赖提供。</li>
+<li>CUDA Toolkit：包含 <code>nvcc</code> 等编译工具，是否需要取决于具体工作负载。</li>
+<li>GPU 计算能力：决定相关预编译二进制和内核是否支持当前硬件。</li>
+</ul>
+<p><strong>最佳实践：</strong> 对于 CUDA 项目，还应记录驱动要求、目标 GPU 架构及必要的系统运行条件。正所谓配置文件也有文档属性。</p>
+<figure class="highlight toml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 片段示意，需放入实际 pixi.toml 的 [workspace] 中</span></span><br><span class="line"><span class="section">[workspace]</span></span><br><span class="line"><span class="attr">name</span> = <span class="string">&quot;gpu-demo&quot;</span></span><br><span class="line"><span class="attr">channels</span> = [<span class="string">&quot;conda-forge&quot;</span>]</span><br><span class="line"><span class="attr">platforms</span> = [</span><br><span class="line">    <span class="string">&quot;osx-arm64&quot;</span>,</span><br><span class="line">    &#123; platform = <span class="string">&quot;linux-64&quot;</span>, cuda = <span class="string">&quot;12.0&quot;</span>, glibc = <span class="string">&quot;2.28&quot;</span> &#125;,</span><br><span class="line">]</span><br></pre></td></tr></table></figure>
+
+<p>具体字段以 <a target="_blank" rel="noopener" href="https://pixi.sh/latest/reference/pixi_manifest/">Pixi Manifest（latest）</a> 和 <a target="_blank" rel="noopener" href="https://pixi.sh/latest/">CUDA &#x2F; system requirements 相关文档</a> 为准。</p>
+<hr>
+<h3 id="共享服务器与-HPC：文件系统比包管理器更重要"><a href="#共享服务器与-HPC：文件系统比包管理器更重要" class="headerlink" title="共享服务器与 HPC：文件系统比包管理器更重要"></a>共享服务器与 HPC：文件系统比包管理器更重要</h3><p>关于 Pixi 缓存与 Slurm 批处理的讨论，参考了 Xiaofei 老师的 <a target="_blank" rel="noopener" href="https://x-zang.github.io/blog/switch-from-conda-to-pixi/">Switching from conda to pixi</a>；下文进一步讨论共享存储、离线节点和作业执行的约束。</p>
+<p>在共享服务器中，用户的 <code>$HOME</code> 可能位于 NFS &#x2F; Lustre &#x2F; BeeGFS 一类网络文件系统上。</p>
+<p>uv 和 Pixi 在依赖安装时涉及大量小文件读取、解压与元数据操作。这些操作在本地 SSD 上通常非常快，但在共享文件系统中可能产生显著的元数据访问开销。</p>
+<p>一般来说每个实验室&#x2F;企业的集群都会有相关文档，请以那个为准而不是听信路边 AI 的泛泛而谈。</p>
+<h4 id="Home、共享-Scratch-和节点本地存储"><a href="#Home、共享-Scratch-和节点本地存储" class="headerlink" title="Home、共享 Scratch 和节点本地存储"></a>Home、共享 Scratch 和节点本地存储</h4><p>一般的 HPC 集群会区分三类存储：</p>
+<ol>
+<li><strong>Home</strong>：保存配置文件、小型项目及长期使用的开发工具。</li>
+<li><strong>共享 Scratch</strong>：保存大型数据集、依赖缓存及需要跨作业复用的工作文件。</li>
+<li><strong>节点本地临时存储</strong>：保存单次作业的临时数据，通常在作业结束后清理。</li>
+</ol>
+<p>其中最容易混淆的是：<strong>共享 Scratch 与节点本地 Scratch 并非同一种存储。</strong></p>
+<p>共享 Scratch 一般可以跨节点访问，适合复用缓存；节点本地存储则通常具有更高的本地 I&#x2F;O 性能，但数据生命周期受作业调度控制。</p>
+<p>如果要常用这个机器，最好根据存储用途划分不同目录：</p>
+<table>
+<thead>
+<tr>
+<th>数据类别</th>
+<th>推荐位置</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Shell 配置、项目清单、锁文件</td>
+<td><code>$HOME</code> 或 Git 仓库</td>
+<td>小文件、需要长期保留</td>
+</tr>
+<tr>
+<td>uv &#x2F; Pixi 下载缓存</td>
+<td>高速、允许复用的持久 Scratch</td>
+<td>减少共享 Home I&#x2F;O</td>
+</tr>
+<tr>
+<td>项目虚拟环境</td>
+<td>项目目录或高速工作目录</td>
+<td>兼顾运行性能与环境隔离</td>
+</tr>
+<tr>
+<td>临时计算文件</td>
+<td>节点本地 SSD &#x2F; <code>TMPDIR</code></td>
+<td>高频 I&#x2F;O、生命周期短</td>
+</tr>
+<tr>
+<td>重要训练结果与检查点checkpoint</td>
+<td>持久存储</td>
+<td>防止任务结束后数据丢失</td>
+</tr>
+</tbody></table>
+<p><strong>特别注意：缓存目录与环境目录并不相同。</strong></p>
+<ul>
+<li><code>UV_CACHE_DIR</code> 控制 uv 的依赖缓存，不直接决定项目 <code>.venv/</code> 的位置。</li>
+<li><code>PIXI_CACHE_DIR</code> 控制 Pixi 的缓存，不直接移动项目 <code>.pixi/envs/</code>。Pixi 也支持 <code>RATTLER_CACHE_DIR</code>，但如果两者都设置，以 <code>PIXI_CACHE_DIR</code> 为准。</li>
+<li>缓存可以清理并重新生成，但删除已经安装的项目环境会触发重新安装。</li>
+<li>对于 uv，缓存和虚拟环境位于同一文件系统时，通常更有利于链接和 Copy-on-Write 等快速安装机制。</li>
+</ul>
+<p>如果缓存与虚拟环境必须位于不同文件系统，可以针对 uv 显式使用复制模式：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">export</span> UV_LINK_MODE=copy</span><br></pre></td></tr></table></figure>
+
+<p>这可以避免部分跨文件系统链接失败的警告，但复制操作可能比同文件系统的链接机制更慢，因此不建议在所有环境中无条件启用。</p>
+<h4 id="持久化依赖缓存"><a href="#持久化依赖缓存" class="headerlink" title="持久化依赖缓存"></a>持久化依赖缓存</h4><p>如果服务器提供高速且允许持久保存的 Scratch 目录，建议优先使用它存放包缓存。例如：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 假设管理员已提供 SCRATCH 环境变量</span></span><br><span class="line"><span class="keyword">if</span> [ -n <span class="string">&quot;<span class="variable">$&#123;SCRATCH:-&#125;</span>&quot;</span> ]; <span class="keyword">then</span></span><br><span class="line">    <span class="built_in">export</span> UV_CACHE_DIR=<span class="string">&quot;<span class="variable">$SCRATCH</span>/.cache/uv&quot;</span></span><br><span class="line">    <span class="built_in">export</span> PIXI_CACHE_DIR=<span class="string">&quot;<span class="variable">$SCRATCH</span>/.cache/rattler&quot;</span></span><br><span class="line">    <span class="built_in">mkdir</span> -p <span class="string">&quot;<span class="variable">$UV_CACHE_DIR</span>&quot;</span> <span class="string">&quot;<span class="variable">$PIXI_CACHE_DIR</span>&quot;</span></span><br><span class="line"><span class="keyword">fi</span></span><br></pre></td></tr></table></figure>
+
+<p>注意，该代码属于<strong>环境特定覆盖配置</strong>，应放在通用 Shell 配置之后，或者在需要时单独加载；集群如何命名 Scratch、是否按用户分配、是否允许大量小文件，应以管理员说明为准。</p>
+<p>这样多个作业可能利用已经下载的依赖，减少重复下载。同时，Scratch 目录也可能存在自动清理机制。依赖缓存可以被清理，但不能把它当作唯一的长期数据副本。</p>
+<h4 id="HPC-与-Slurm-环境下的部署问题"><a href="#HPC-与-Slurm-环境下的部署问题" class="headerlink" title="HPC 与 Slurm 环境下的部署问题"></a>HPC 与 Slurm 环境下的部署问题</h4><p>要在集群的批处理任务里稳定运行现代包管理工具，必须知道服务器有这么些特点：1. 离线的计算节点、2. 脆弱的高延迟共享存储，3. 以及大规模并发的作业。</p>
+<p>这也直接否定了本地开发时的两个惯性假设：</p>
+<ul>
+<li><p>环境不能依赖隐式激活：批处理环境没有标准的交互式 Shell 生命周期，依赖 <code>~/.bashrc</code> 注入变量或通过 mise activate 动态劫持 PATH 都是不可靠的。非交互式作业应完全依赖入口命令的自解析（如 <code>uv run</code>、<code>pixi run</code> 或 <code>mise exec</code>）。</p>
+</li>
+<li><p>Lockfile 并不等同于离线可用：以笔记（二）的 Pixi 科学计算项目为例，<code>pixi.lock</code> 记录的是确定性的依赖图谱，而不是安装包本身。一旦作业分发到断网的计算节点，任何动态解析或未缓存的包下载都会直接报错。<code>.pixi/</code> 目录必须在登录节点预先构建在全局可见的存储上，计算节点只负责只读执行。</p>
+</li>
+</ul>
+<pre><code class="highlight mermaid">flowchart TB
+    subgraph LOGIN[&quot;01 · Login Node ｜登录节点&quot;]
+        direction LR
+        L1[&quot;拉取代码仓库&quot;]
+        L2[&quot;pixi.lock&quot;]
+        L3[&quot;安装 / 预热环境&quot;]
+
+        L1 --&gt;|&quot;获取项目&quot;| L2
+        L2 --&gt;|&quot;校验并同步&quot;| L3
+    end
+
+    subgraph STORAGE[&quot;02 · Shared Storage ｜共享存储&quot;]
+        direction LR
+        S1[&quot;.pixi/&quot;]
+        S2[&quot;共享依赖缓存&quot;]
+    end
+
+    subgraph COMPUTE[&quot;03 · Compute Nodes ｜计算节点&quot;]
+        direction LR
+        C1[&quot;Slurm Job 01&quot;]
+        C2[&quot;Slurm Job 02&quot;]
+        C3[&quot;Slurm Job N&quot;]
+    end
+
+    L3 --&gt;|&quot;环境就绪&quot;| S1
+    L3 -.-&gt;|&quot;可选缓存&quot;| S2
+
+    S1 --&gt; C1
+    S1 --&gt; C2
+    S1 --&gt; C3
+
+    classDef login fill:#E5EDE7,stroke:#789483,color:#344E41,stroke-width:1.4px
+    classDef storage fill:#E2E8F0,stroke:#8293AD,color:#394D68,stroke-width:1.4px
+    classDef compute fill:#E9E4EF,stroke:#9886AB,color:#534568,stroke-width:1.4px
+    classDef keyLogin fill:#426356,stroke:#426356,color:#FFFFFF,stroke-width:1.8px
+    classDef keyStorage fill:#465B78,stroke:#465B78,color:#FFFFFF,stroke-width:1.8px
+    classDef keyCompute fill:#665477,stroke:#665477,color:#FFFFFF,stroke-width:1.8px
+
+    class L1,L3 login
+    class L2 keyLogin
+    class S2 storage
+    class S1 keyStorage
+    class C1,C2,C3 keyCompute
+
+    style LOGIN fill:#F7F9F7,stroke:#B5C5BA,color:#344E41
+    style STORAGE fill:#F5F7FA,stroke:#BCC7D7,color:#394D68
+    style COMPUTE fill:#F8F6FA,stroke:#C9BED4,color:#534568
+
+    linkStyle default stroke:#92979D,stroke-width:1.4px
+</code></pre>
+
+<h4 id="Slurm-批处理脚本"><a href="#Slurm-批处理脚本" class="headerlink" title="Slurm 批处理脚本"></a>Slurm 批处理脚本</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#!/usr/bin/env bash</span></span><br><span class="line"><span class="comment">#SBATCH --job-name=deep-vision</span></span><br><span class="line"><span class="comment">#SBATCH --nodes=1</span></span><br><span class="line"><span class="comment">#SBATCH --ntasks=1</span></span><br><span class="line"><span class="comment">#SBATCH --cpus-per-task=8</span></span><br><span class="line"><span class="comment">#SBATCH --mem=32G</span></span><br><span class="line"><span class="comment">#SBATCH --time=04:00:00</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">set</span> -euo pipefail</span><br><span class="line"></span><br><span class="line"><span class="comment"># 1. 显式配置可执行文件路径</span></span><br><span class="line"><span class="built_in">export</span> PATH=<span class="string">&quot;<span class="variable">$HOME</span>/.local/bin:<span class="variable">$HOME</span>/.pixi/bin:<span class="variable">$PATH</span>&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 2. 进入提交作业时的目录</span></span><br><span class="line"><span class="built_in">cd</span> <span class="string">&quot;<span class="variable">$SLURM_SUBMIT_DIR</span>&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 3. 使用可持久化 Scratch 缓存（需按集群文档确认）</span></span><br><span class="line">: <span class="string">&quot;<span class="variable">$&#123;SCRATCH:?需要集群提供 SCRATCH 路径&#125;</span>&quot;</span></span><br><span class="line"><span class="built_in">export</span> UV_CACHE_DIR=<span class="string">&quot;<span class="variable">$SCRATCH</span>/.cache/uv&quot;</span></span><br><span class="line"><span class="built_in">export</span> PIXI_CACHE_DIR=<span class="string">&quot;<span class="variable">$SCRATCH</span>/.cache/rattler&quot;</span></span><br><span class="line"><span class="built_in">mkdir</span> -p <span class="string">&quot;<span class="variable">$UV_CACHE_DIR</span>&quot;</span> <span class="string">&quot;<span class="variable">$PIXI_CACHE_DIR</span>&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 4. 使用作业级临时目录（如果集群提供）</span></span><br><span class="line"><span class="keyword">if</span> [ -n <span class="string">&quot;<span class="variable">$&#123;SLURM_TMPDIR:-&#125;</span>&quot;</span> ]; <span class="keyword">then</span></span><br><span class="line">    <span class="built_in">export</span> TMPDIR=<span class="string">&quot;<span class="variable">$SLURM_TMPDIR</span>&quot;</span></span><br><span class="line"><span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 5. 执行已经准备好的锁定环境中的任务</span></span><br><span class="line"><span class="comment"># --as-is 不修改项目环境，也不会在这里帮你安装缺失依赖</span></span><br><span class="line">pixi run --as-is run</span><br></pre></td></tr></table></figure>
+
+<p>提交作业：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sbatch train.slurm</span><br></pre></td></tr></table></figure>
+
+<p>这里采用了三个关键策略：</p>
+<ul>
+<li><strong>显式初始化</strong>：避免依赖交互式 Shell 启动脚本。</li>
+<li><strong>依赖缓存持久化</strong>：减少作业间重复下载。</li>
+<li><strong>临时文件本地化</strong>：在集群提供节点本地临时目录时，让支持 <code>TMPDIR</code> 的程序优先使用它。</li>
+</ul>
+<p>这个脚本有明确前提：<strong>在提交作业之前已经准备好与目标节点兼容的项目环境</strong>。如果希望脚本在执行时验证清单与锁文件是否一致，可以在准备阶段用 <code>pixi install --locked</code>；如果想在节点上按锁文件补装缺失依赖，必须确保对应缓存与离线条件确实满足要求。<code>pixi run --as-is</code> 只是避免任务运行时修改环境，并不会替你解决这些前置问题。</p>
+<p>另外，<code>SLURM_TMPDIR</code> 并非所有 Slurm 集群都提供，不能无条件依赖。GPU、分区、账户、模块环境和存储路径也需要根据具体集群配置。</p>
+<p>为自己也为别人的血压考虑：在多用户集群环境中，请不要直接删除其他用户或正在运行的作业可能依赖的共享缓存目录！</p>
+<p>官方补充：<a target="_blank" rel="noopener" href="https://pixi.sh/latest/reference/cli/pixi/run/">Pixi run（latest）</a>、<a target="_blank" rel="noopener" href="https://pixi.sh/latest/reference/environment_variables/">Pixi 环境变量（latest）</a>。</p>
+<hr>
+<h3 id="进程超时与强杀-事务完整性分析"><a href="#进程超时与强杀-事务完整性分析" class="headerlink" title="进程超时与强杀: 事务完整性分析"></a>进程超时与强杀: 事务完整性分析</h3><p>在自动化工作流（如 CI Runner、Agent 运行host）中，进程被中断是常态。我们需要从操作系统信号层面理解安装工具的行为边界：</p>
+<pre><code class="highlight mermaid">sequenceDiagram
+    autonumber
+
+    actor Supervisor as Agent Supervisor
+    participant Process as Pixi / uv / Conda
+    participant FS as Cache &amp; Environment
+
+    rect rgb(240, 245, 242)
+        Supervisor-&gt;&gt;Process: SIGTERM · 请求终止
+        Note over Supervisor,Process: Graceful Shutdown Window
+        opt 进程支持清理逻辑
+            Process-&gt;&gt;FS: 清理临时文件 / 释放资源
+            FS--&gt;&gt;Process: 清理完成
+        end
+    end
+
+    alt 进程在宽限期内退出
+        Process--&gt;&gt;Supervisor: 进程退出
+        Note over Process,FS: 不代表事务性回滚已完成
+    else 超时后仍未退出
+        rect rgb(248, 235, 231)
+            Supervisor-&gt;&gt;Process: SIGKILL · 强制终止
+            Note over Process: 无法捕获或执行退出清理
+            Process-xFS: 写入中断
+            Note over FS: 可能残留临时文件或部分状态
+        end
+    end
+</code></pre>
+
+<h4 id="现代工具如何抵御-SIGKILL：从文件原子性到环境崩溃一致性"><a href="#现代工具如何抵御-SIGKILL：从文件原子性到环境崩溃一致性" class="headerlink" title="现代工具如何抵御 SIGKILL：从文件原子性到环境崩溃一致性"></a>现代工具如何抵御 SIGKILL：从文件原子性到环境崩溃一致性</h4><p>用户态程序在 <code>SIGKILL</code> 面前没有任何自救逻辑可言。既然无法捕获信号来做应用级回滚，现代包管理器的可靠性就必须下沉到<strong>文件系统级（Crash Consistency）</strong>。</p>
+<p>但问题是单个包的写入原子性，<strong>不等于</strong>整个环境的事务原子性。</p>
+<ol>
+<li><p><strong>写临时目录 + POSIX 原子重命名（Atomic Rename）</strong><br>在遵循 POSIX 规范的同一文件系统上，<code>rename()</code> 是原子的。<code>uv</code> 或 <code>rattler</code>（Pixi 底层）在解压包时，会先写入带随机后缀的临时目录，校验通过后再重命名为正式路径。</p>
+<ul>
+<li><strong>收益</strong>：避免向全局缓存中写入半拉子的破损库文件。如果进程在解压阶段被 <code>SIGKILL</code>，遗留的只是未被引用的垃圾临时目录，下次运行可安全覆盖或清理。</li>
+<li><strong>边界</strong>：这只能保护<strong>缓存池里的包文件</strong>。一次包含几十个依赖的环境变更涉及数百次文件操作与软硬链接变动，包管理器无法靠文件系统原生提供跨目录的 ACID 事务。</li>
+</ul>
+</li>
+<li><p><strong>并发锁与读写隔离</strong><br><code>uv</code> 和现代包工具引入了基于文件锁（File Lock）的同步机制。写缓存或写虚拟环境前必须获取排他锁（Exclusive Lock）。</p>
+<ul>
+<li>锁只能避灾不能容灾。能够避免并发写踩踏，但是断电或被杀后的自动自愈就做不到了。如果进程在持有锁并更新目录链接到一半时被 <code>SIGKILL</code>，锁虽然会由内核在 fd 关闭时自动释放，但留下的却是一个依赖拓扑不一致的半拉环境。</li>
+</ul>
+</li>
+<li><p><strong>声明式环境的可恢复性阶梯</strong><br>正因为不存在真正的分布式事务保障，面向 Agent 的环境管理核心是“可诊断与分级恢复”，而非迷信工具能无损自愈：</p>
+<ul>
+<li><strong>快路径（Re-sync）</strong>：再次运行 <code>pixi install --locked</code>。依赖求解器重新遍历已下载的包与目标目录，修补缺失链接。</li>
+<li><strong>慢路径（Cold Rebuild）</strong>：彻底抹掉 <code>.pixi/envs/default</code> 目录，重新从本地缓存硬链接出新环境。由于底层的包已经被缓存，本地 NVMe SSD 上通常只需数秒，但在高延迟、元数据性能脆弱的 Lustre&#x2F;NFS 集群存储上，这一步会变成灾难性的 I&#x2F;O 风暴。</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h3 id="Harness：给-Agent-加环境契约（AGENTS-md）"><a href="#Harness：给-Agent-加环境契约（AGENTS-md）" class="headerlink" title="Harness：给 Agent 加环境契约（AGENTS.md）"></a>Harness：给 Agent 加环境契约（<code>AGENTS.md</code>）</h3><p>The Bitter Lesson告诉我们，目前的问题很多都能通过未来基模的能力提升得到解决，但那也是在明天。目前不要指望 Coding Agent 是全知全能的，所以尽量在仓库根目录的 <code>AGENTS.md</code> 或者别的文档和specs里面告诉agent自己的环境方案约束:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"># AGENTS.md:</span><br><span class="line">本项目依赖 Pixi 统一管理。</span><br><span class="line">## 1. 执行准则：只读与无交互</span><br><span class="line">- **禁止隐式刷新依赖**：执行任何分析或测试任务，必须带 `--locked`（本地验证）或 `--frozen`（集群/生产执行）：</span><br><span class="line">  pixi run --locked &lt;task_name&gt;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">- **禁止启动交互环境**：严禁调用 `pixi shell`，所有上下文通过 `pixi run` 或 `pixi exec` 显式隔离。</span><br><span class="line"></span><br><span class="line">## 2. 状态变更准则</span><br><span class="line"></span><br><span class="line">- 依赖增删只修改声明文件（`pixi.toml`），不得直接在环境内调用 `pip install` 或 `conda install`。</span><br><span class="line">- 修改声明后，必须在具有外网访问权限的节点同步刷新锁文件：</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">  pixi update &amp;&amp; git add pixi.toml pixi.lock</span><br><span class="line"></span><br><span class="line">## 3. 故障自愈降级阶梯（Self-Healing Pipeline）</span><br><span class="line"></span><br><span class="line">任务因超时（SIGTERM/SIGKILL）或动态链接异常退出时，按以下阶梯依次尝试恢复，严禁起手直接清空全局缓存：</span><br><span class="line"></span><br><span class="line">1. **Step 1: 幂等修补**</span><br><span class="line">   重新校准当前目录与锁文件的一致性：</span><br><span class="line"></span><br><span class="line">   pixi install --locked</span><br><span class="line"></span><br><span class="line">2. **Step 2: 隔离重建**</span><br><span class="line">   若仍然报错或动态库残缺，且当前位于本地磁盘，执行项目环境重置（严禁递归删除上级目录或 `~/.rattler` 全局缓存）：</span><br><span class="line"></span><br><span class="line">   rm -rf .pixi/envs/default</span><br><span class="line">   pixi install --locked</span><br><span class="line"></span><br><span class="line">3. **Step 3: 熔断上报**</span><br><span class="line">   若两次恢复后仍无法执行最小自检任务（`pixi run --locked python -c &quot;import torch&quot;`），终止流程并输出环境上下文与 `pixi info` 供人工介入。</span><br></pre></td></tr></table></figure>
+
+<p>这些best practice在好的基模和好的harness下是不需要说得那么详细的，具体文档表达不能硬搬上述教条，需要结合实际上下文管理场景来综合考量哦。</p>
+<hr>
+<h3 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h3><p>在单机交互和古法编程时代，开发者习惯把包管理器当作一个即用即走的黑盒：能跑就行，崩了就按 <code>Ctrl-C</code> 重新试一次。相比生产环境要求不知道低到哪去了。</p>
+<p>但agent时代一点点疏忽可能就是睡前设定的自动化开发流程卡死，一晚上白干。随着越来越多人需要在重型远程集群上进行开发和训练，环境问题直接影响GPU小时和token账单。Agentic System意味着自动化，形式化的约束，在这里体现为可断言、可降级、可自动收敛的确定性状态机。</p>
+<h3 id="参考与延伸阅读（References）"><a href="#参考与延伸阅读（References）" class="headerlink" title="参考与延伸阅读（References）"></a>参考与延伸阅读（References）</h3><ul>
+<li><a target="_blank" rel="noopener" href="https://pixi.sh/latest/reference/pixi_manifest/">Pixi Manifest（latest）</a></li>
+<li><a target="_blank" rel="noopener" href="https://pixi.sh/latest/reference/cli/pixi/run/">Pixi CLI &#x2F; run（latest）</a></li>
+<li><a target="_blank" rel="noopener" href="https://pixi.sh/latest/reference/environment_variables/">Pixi 环境变量（latest）</a></li>
+<li><a target="_blank" rel="noopener" href="https://docs.astral.sh/uv/concepts/projects/sync/">uv Locking and syncing</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://dt1dr.github.io/zh-CN_blogs">dt1dr</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-2/">https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-2/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://dt1dr.github.io/zh-CN_blogs" target="_blank">Dfexsite</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/zh-CN_blogs/tags/DevOps/">DevOps</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Tooling/">Tooling</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Environment/">Environment</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/CUDA/">CUDA</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/SLURM/">SLURM</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Agent/">Agent</a></div><div class="post-share"><div class="social-share" data-image="/zh-CN_blogs/img/DevOpsCover.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related full-width" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战"><img class="cover" src="/zh-CN_blogs/img/DevOpsCover.png" onerror="onerror=null;src='/zh-CN_blogs/img/404.jpg'" alt="cover of next post"><div class="info text-right"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">开发环境和包管理：macOS / Linux 跨平台实战</div></div><div class="info-2"><div class="info-item-1">前言目前这种环境配置方案的时效性很强，如果你在2027年以后读到这里建议不要直接照搬，毕竟当下的生态只能算是agent-friendly 而不是agent native。下面的使用场景涉及使用多种不同编程语言的纯软件开发，但是基本都是轻资产的场景，笔者目前对游戏开发&#x2F;嵌入式&#x2F;硬件设计了解不深，所以可能这份经验用不上。  工具选型与日常工作流：mise、uv、Micromamba、Pixi架构分层：职责单一原则笔...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么"><img class="cover" src="/zh-CN_blogs/img/DevOpsCover.png" alt="cover"><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-10-14</div><div class="info-item-2">开发环境和包管理：Conda之后还有什么</div></div><div class="info-2"><div class="info-item-1">前言这几年豪情满天的Rust社区把开发工具链里面的很多关键工具轮子都用现代标准重新搓了一遍（Rewrite It In Rust, RIIR）。虽然我们完全可以用20年代初的那些教程里面的开发工具链和包管理工具来搭建自己的开发环境，但是看到小众潮酷的那些现代特性和性能提升，谁能忍住不去找一份最佳实践来取悦自己呢？尽管根据笔者乐观预计，到了2027年及以后，AI agent的配置环境能力将会彻底超越一般工程师，但是对环境管理的品味和...</div></div></div></a><a class="pagination-related" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS &#x2F; Linux 跨平台实战"><img class="cover" src="/zh-CN_blogs/img/DevOpsCover.png" alt="cover"><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-10-14</div><div class="info-item-2">开发环境和包管理：macOS &#x2F; Linux 跨平台实战</div></div><div class="info-2"><div class="info-item-1">前言目前这种环境配置方案的时效性很强，如果你在2027年以后读到这里建议不要直接照搬，毕竟当下的生态只能算是agent-friendly 而不是agent native。下面的使用场景涉及使用多种不同编程语言的纯软件开发，但是基本都是轻资产的场景，笔者目前对游戏开发&#x2F;嵌入式&#x2F;硬件设计了解不深，所以可能这份经验用不上。  工具选型与日常工作流：mise、uv、Micromamba、Pixi架构分层：职责单一原则笔...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/zh-CN_blogs/img/avatar.jpg" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">dt1dr</div><div class="author-info-description">计算机科学专业，ML Infra爱好者，数学门外汉</div><div class="site-data"><a href="/zh-CN_blogs/archives/"><div class="headline">文章</div><div class="length-num">14</div></a><a href="/zh-CN_blogs/tags/"><div class="headline">标签</div><div class="length-num">40</div></a><a href="/zh-CN_blogs/categories/"><div class="headline">分类</div><div class="length-num">6</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/dt1dr"><i class="fab fa-github"></i><span>Follow Me</span></a></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%89%8D%E8%A8%80"><span class="toc-number">1.</span> <span class="toc-text">前言</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%B1%82%E8%A7%A3%E6%88%90%E5%8A%9F%E7%9A%84%E5%81%87%E8%B1%A1%EF%BC%9A%E5%8C%85%E7%AE%A1%E7%90%86%E5%99%A8%E4%B8%8E%E5%AE%BF%E4%B8%BB%E6%9C%BA%E7%9A%84%E8%BE%B9%E7%95%8C"><span class="toc-number">1.1.</span> <span class="toc-text">求解成功的假象：包管理器与宿主机的边界</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E5%B8%B8%E8%A7%81-CUDA-ABI-%E8%AF%8A%E6%96%AD%E8%A1%A8"><span class="toc-number">1.1.1.</span> <span class="toc-text">常见 CUDA &#x2F; ABI 诊断表</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%85%B1%E4%BA%AB%E6%9C%8D%E5%8A%A1%E5%99%A8%E4%B8%8E-HPC%EF%BC%9A%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%E6%AF%94%E5%8C%85%E7%AE%A1%E7%90%86%E5%99%A8%E6%9B%B4%E9%87%8D%E8%A6%81"><span class="toc-number">1.2.</span> <span class="toc-text">共享服务器与 HPC：文件系统比包管理器更重要</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#Home%E3%80%81%E5%85%B1%E4%BA%AB-Scratch-%E5%92%8C%E8%8A%82%E7%82%B9%E6%9C%AC%E5%9C%B0%E5%AD%98%E5%82%A8"><span class="toc-number">1.2.1.</span> <span class="toc-text">Home、共享 Scratch 和节点本地存储</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E6%8C%81%E4%B9%85%E5%8C%96%E4%BE%9D%E8%B5%96%E7%BC%93%E5%AD%98"><span class="toc-number">1.2.2.</span> <span class="toc-text">持久化依赖缓存</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#HPC-%E4%B8%8E-Slurm-%E7%8E%AF%E5%A2%83%E4%B8%8B%E7%9A%84%E9%83%A8%E7%BD%B2%E9%97%AE%E9%A2%98"><span class="toc-number">1.2.3.</span> <span class="toc-text">HPC 与 Slurm 环境下的部署问题</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#Slurm-%E6%89%B9%E5%A4%84%E7%90%86%E8%84%9A%E6%9C%AC"><span class="toc-number">1.2.4.</span> <span class="toc-text">Slurm 批处理脚本</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%BF%9B%E7%A8%8B%E8%B6%85%E6%97%B6%E4%B8%8E%E5%BC%BA%E6%9D%80-%E4%BA%8B%E5%8A%A1%E5%AE%8C%E6%95%B4%E6%80%A7%E5%88%86%E6%9E%90"><span class="toc-number">1.3.</span> <span class="toc-text">进程超时与强杀: 事务完整性分析</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E7%8E%B0%E4%BB%A3%E5%B7%A5%E5%85%B7%E5%A6%82%E4%BD%95%E6%8A%B5%E5%BE%A1-SIGKILL%EF%BC%9A%E4%BB%8E%E6%96%87%E4%BB%B6%E5%8E%9F%E5%AD%90%E6%80%A7%E5%88%B0%E7%8E%AF%E5%A2%83%E5%B4%A9%E6%BA%83%E4%B8%80%E8%87%B4%E6%80%A7"><span class="toc-number">1.3.1.</span> <span class="toc-text">现代工具如何抵御 SIGKILL：从文件原子性到环境崩溃一致性</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Harness%EF%BC%9A%E7%BB%99-Agent-%E5%8A%A0%E7%8E%AF%E5%A2%83%E5%A5%91%E7%BA%A6%EF%BC%88AGENTS-md%EF%BC%89"><span class="toc-number">1.4.</span> <span class="toc-text">Harness：给 Agent 加环境契约（AGENTS.md）</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E7%BB%93%E8%AF%AD"><span class="toc-number">1.5.</span> <span class="toc-text">结语</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%8F%82%E8%80%83%E4%B8%8E%E5%BB%B6%E4%BC%B8%E9%98%85%E8%AF%BB%EF%BC%88References%EF%BC%89"><span class="toc-number">1.6.</span> <span class="toc-text">参考与延伸阅读（References）</span></a></li></ol></li></ol></div></div><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>系列文章</span></div><div class="aside-list"><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</a><time datetime="2026-10-15T04:50:46.000Z" title="发表于 2026-10-14 23:50:46">2026-10-14</time></div></div><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战">开发环境和包管理：macOS / Linux 跨平台实战</a><time datetime="2026-10-14T19:50:06.000Z" title="发表于 2026-10-14 14:50:06">2026-10-14</time></div></div><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么">开发环境和包管理：Conda之后还有什么</a><time datetime="2026-10-14T18:50:48.000Z" title="发表于 2026-10-14 13:50:48">2026-10-14</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</a><time datetime="2026-10-15T04:50:46.000Z" title="发表于 2026-10-14 23:50:46">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：macOS / Linux 跨平台实战"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战">开发环境和包管理：macOS / Linux 跨平台实战</a><time datetime="2026-10-14T19:50:06.000Z" title="发表于 2026-10-14 14:50:06">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：Conda之后还有什么"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么">开发环境和包管理：Conda之后还有什么</a><time datetime="2026-10-14T18:50:48.000Z" title="发表于 2026-10-14 13:50:48">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/PL-0/" title="编译器学习：Overview"><img src="/zh-CN_blogs/img/PLCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="编译器学习：Overview"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/PL-0/" title="编译器学习：Overview">编译器学习：Overview</a><time datetime="2026-10-14T18:45:24.000Z" title="发表于 2026-10-14 13:45:24">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2025/07/17/DDP-1/" title="分布式训练学习：原理、实现与优化"><img src="/zh-CN_blogs/img/MLsysCover1.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="分布式训练学习：原理、实现与优化"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2025/07/17/DDP-1/" title="分布式训练学习：原理、实现与优化">分布式训练学习：原理、实现与优化</a><time datetime="2025-07-17T22:24:32.000Z" title="发表于 2025-07-17 17:24:32">2025-07-17</time></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2020 - 2026 By dt1dr</span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/zh-CN_blogs/js/utils.js"></script><script src="/zh-CN_blogs/js/main.js"></script><div class="js-pjax"><script>(() => {
+  const parseViewBox = viewBox => {
+    if (!viewBox) return null
+    const parts = viewBox.trim().split(/[\s,]+/).map(n => Number(n))
+    if (parts.length !== 4 || parts.some(n => Number.isNaN(n))) return null
+    return parts
+  }
+
+  const getSvgViewBox = svg => {
+    const attr = parseViewBox(svg.getAttribute('viewBox'))
+    if (attr) return attr
+
+    // Fallback: use bbox to build a viewBox
+    try {
+      const bbox = svg.getBBox()
+      if (bbox && bbox.width && bbox.height) return [bbox.x, bbox.y, bbox.width, bbox.height]
+    } catch (e) {
+      // getBBox may fail on some edge cases; ignore
+    }
+
+    const w = Number(svg.getAttribute('width')) || 0
+    const h = Number(svg.getAttribute('height')) || 0
+    if (w > 0 && h > 0) return [0, 0, w, h]
+    return [0, 0, 100, 100]
+  }
+
+  const setSvgViewBox = (svg, vb) => {
+    svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2]} ${vb[3]}`)
+  }
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v))
+
+  const openSvgInNewTab = ({ source, initViewBox }) => {
+    const getClonedSvg = () => {
+      if (typeof source === 'string') {
+        const template = document.createElement('template')
+        template.innerHTML = source.trim()
+        const svg = template.content.querySelector('svg')
+        return svg ? svg.cloneNode(true) : null
+      }
+      if (source && typeof source.cloneNode === 'function') {
+        return source.cloneNode(true)
+      }
+      return null
+    }
+
+    const clone = getClonedSvg()
+    if (!clone) return
+    if (initViewBox && initViewBox.length === 4) {
+      clone.setAttribute('viewBox', initViewBox.join(' '))
+    }
+    if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    if (!clone.getAttribute('xmlns:xlink') && clone.innerHTML.includes('xlink:')) {
+      clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+    }
+    // inject background to match current theme
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    const bg = getComputedStyle(document.body).backgroundColor || (isDark ? '#1e1e1e' : '#ffffff')
+    if (!clone.style.background) clone.style.background = bg
+
+    const serializer = new XMLSerializer()
+    const svgSource = serializer.serializeToString(clone)
+    const htmlSource = `<!doctype html><html><head><meta charset="utf-8" />
+      <style>
+        html, body { width: 100%; height: 100%; margin: 0; display: flex; align-items: center; justify-content: center; background: ${bg}; }
+        svg { max-width: 100%; max-height: 100%; height: auto; width: auto; }
+      </style>
+      </head><body>${svgSource}</body></html>`
+    const blob = new Blob([htmlSource], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener')
+
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+
+  const attachMermaidViewerButton = wrap => {
+    let btn = wrap.querySelector('.mermaid-open-btn')
+    if (!btn) {
+      btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'mermaid-open-btn'
+      wrap.appendChild(btn)
+    }
+
+    btn.innerHTML = '<i class="fa fa-search fa-fw" aria-hidden="true"></i>'
+
+    if (!btn.__mermaidViewerBound) {
+      btn.addEventListener('click', e => {
+        e.preventDefault()
+        e.stopPropagation()
+        const svg = wrap.__mermaidOriginalSvg || wrap.querySelector('svg')
+        if (!svg) return
+        const initViewBox = wrap.__mermaidInitViewBox
+        openSvgInNewTab({ source: svg, initViewBox })
+      })
+      btn.__mermaidViewerBound = true
+    }
+  }
+
+  // Zoom around a point (px, py) in the SVG viewport (in viewBox coordinates)
+  const zoomAtPoint = (vb, factor, px, py) => {
+    const w = vb[2] * factor
+    const h = vb[3] * factor
+    const nx = px - (px - vb[0]) * factor
+    const ny = py - (py - vb[1]) * factor
+    return [nx, ny, w, h]
+  }
+
+  const initMermaidGestures = wrap => {
+    // Clean up previous event listeners and pending frames
+    if (wrap.__mermaidAbortController) {
+      wrap.__mermaidAbortController.abort()
+      if (wrap.__mermaidRafId) cancelAnimationFrame(wrap.__mermaidRafId)
+    }
+    const ac = new AbortController()
+    wrap.__mermaidAbortController = ac
+    const svg = wrap.querySelector('svg')
+    if (!svg) return
+
+    // Ensure viewBox exists so gestures always work
+    const initVb = getSvgViewBox(svg)
+    wrap.__mermaidInitViewBox = initVb
+    wrap.__mermaidCurViewBox = initVb.slice()
+    setSvgViewBox(svg, initVb)
+    // Disable default gestures to prevent scroll chaining and pinch-zoom penetration in Chrome
+    svg.style.touchAction = 'none'
+
+    // Cache BoundingClientRect, throttled on scroll to reduce reflow
+    let cachedRect = svg.getBoundingClientRect()
+    let rectDirty = false
+    const markRectDirty = () => { rectDirty = true }
+    window.addEventListener('resize', markRectDirty, { signal: ac.signal })
+    window.addEventListener('scroll', markRectDirty, { signal: ac.signal, capture: true })
+    const getRect = () => {
+      if (rectDirty) {
+        cachedRect = svg.getBoundingClientRect()
+        rectDirty = false
+      }
+      return cachedRect
+    }
+
+    // Precompute clamp bounds from initial viewBox
+    const minW = initVb[2] * 0.1
+    const maxW = initVb[2] * 10
+    const minH = initVb[3] * 0.1
+    const maxH = initVb[3] * 10
+    const clampVb = vb => {
+      const out = vb.slice()
+      out[2] = clamp(out[2], minW, maxW)
+      out[3] = clamp(out[3], minH, maxH)
+      return out
+    }
+
+    // Throttle DOM updates using requestAnimationFrame
+    let pendingVb = null
+    let rafId = null
+    const applyVb = () => {
+      if (pendingVb) {
+        wrap.__mermaidCurViewBox = pendingVb
+        setSvgViewBox(svg, pendingVb)
+        pendingVb = null
+      }
+      rafId = null
+      wrap.__mermaidRafId = null
+    }
+    const setCurVb = vb => {
+      pendingVb = clampVb(vb)
+      if (!rafId) {
+        rafId = requestAnimationFrame(applyVb)
+        wrap.__mermaidRafId = rafId
+      }
+    }
+
+    const state = {
+      pointers: new Map(),
+      startVb: null,
+      startDist: 0,
+      lastPointerX: 0,
+      lastPointerY: 0
+    }
+
+    const onPointerDown = e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      svg.setPointerCapture(e.pointerId)
+      const curVb = wrap.__mermaidCurViewBox
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (state.pointers.size === 1) {
+        state.startVb = curVb.slice()
+        state.lastPointerX = e.clientX
+        state.lastPointerY = e.clientY
+      } else if (state.pointers.size === 2) {
+        const pts = [...state.pointers.values()]
+        const dx = pts[0].x - pts[1].x
+        const dy = pts[0].y - pts[1].y
+        state.startDist = Math.hypot(dx, dy)
+        state.startVb = curVb.slice()
+      }
+    }
+
+    const onPointerMove = e => {
+      if (!state.pointers.has(e.pointerId)) return
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      const curVb = wrap.__mermaidCurViewBox
+      const rect = getRect()
+      if (state.pointers.size === 1 && state.startVb) {
+        const p = state.pointers.values().next().value
+        const dxClient = p.x - state.lastPointerX
+        const dyClient = p.y - state.lastPointerY
+        state.lastPointerX = p.x
+        state.lastPointerY = p.y
+        const dx = dxClient * (curVb[2] / rect.width)
+        const dy = dyClient * (curVb[3] / rect.height)
+        setCurVb([curVb[0] - dx, curVb[1] - dy, curVb[2], curVb[3]])
+        return
+      }
+      if (state.pointers.size === 2 && state.startVb && state.startDist > 0) {
+        const pts = [...state.pointers.values()]
+        const dx = pts[0].x - pts[1].x
+        const dy = pts[0].y - pts[1].y
+        const dist = Math.hypot(dx, dy)
+        if (!dist) return
+        const factor = state.startDist / dist
+        const cx = (pts[0].x + pts[1].x) / 2
+        const cy = (pts[0].y + pts[1].y) / 2
+        const px = curVb[0] + (cx - rect.left) * (curVb[2] / rect.width)
+        const py = curVb[1] + (cy - rect.top) * (curVb[3] / rect.height)
+        setCurVb(zoomAtPoint(state.startVb, factor, px, py))
+      }
+    }
+
+    const onPointerUpOrCancel = e => {
+      // Release PointerCapture to avoid event capture anomalies
+      if (svg.hasPointerCapture && svg.hasPointerCapture(e.pointerId)) {
+        svg.releasePointerCapture(e.pointerId)
+      }
+      state.pointers.delete(e.pointerId)
+      if (state.pointers.size === 0) {
+        state.startVb = null
+        state.startDist = 0
+      } else if (state.pointers.size === 1) {
+        const p = state.pointers.values().next().value
+        state.lastPointerX = p.x
+        state.lastPointerY = p.y
+      }
+    }
+
+    const onWheel = e => {
+      // Prevent event bubbling from triggering external scroll
+      e.preventDefault()
+      e.stopPropagation()
+      // Normalize deltaY across deltaMode (Chrome uses pixels, Safari uses lines)
+      let delta = e.deltaY
+      if (e.deltaMode === 1) delta *= 16
+      else if (e.deltaMode === 2) delta *= 400
+
+      // Continuous zoom factor: smoother than fixed 1.1/0.9 steps
+      const zoomFactor = Math.pow(1.001, delta)
+
+      const curVb = wrap.__mermaidCurViewBox
+      const rect = getRect()
+      const px = curVb[0] + (e.clientX - rect.left) * (curVb[2] / rect.width)
+      const py = curVb[1] + (e.clientY - rect.top) * (curVb[3] / rect.height)
+      setCurVb(zoomAtPoint(curVb, zoomFactor, px, py))
+    }
+
+    const onDblClick = () => {
+      const init = wrap.__mermaidInitViewBox
+      if (init) setCurVb(init)
+    }
+
+    svg.addEventListener('pointerdown', onPointerDown, { signal: ac.signal })
+    svg.addEventListener('pointermove', onPointerMove, { signal: ac.signal })
+    svg.addEventListener('pointerup', onPointerUpOrCancel, { signal: ac.signal })
+    svg.addEventListener('pointercancel', onPointerUpOrCancel, { signal: ac.signal })
+    svg.addEventListener('wheel', onWheel, { passive: false, signal: ac.signal })
+    svg.addEventListener('dblclick', onDblClick, { signal: ac.signal })
+  }
+
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      // Clean up event listeners before removing old SVG
+      if (item.__mermaidAbortController) {
+        item.__mermaidAbortController.abort()
+      }
+      const oldSvg = item.querySelector('svg')
+      if (oldSvg) oldSvg.remove()
+      let config = {}
+      try {
+        config = mermaidSrc.dataset.config ? JSON.parse(mermaidSrc.dataset.config) : {}
+      } catch (e) {
+        console.warn('[mermaid] failed to parse dataset.config:', e)
+      }
+      if (!config.theme) {
+        config.theme = theme
+      }
+      const mermaidThemeConfig = `%%{init: ${JSON.stringify(config)}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+        if (false) initMermaidGestures(item)
+        item.__mermaidOriginalSvg = svg
+        if (true) attachMermaidViewerButton(item)
+      }
+
+      const handleError = err => {
+        console.error(`[mermaid] render failed for block #${index}:`, err)
+        const errorEl = document.createElement('div')
+        errorEl.className = 'mermaid-error'
+        errorEl.textContent = `Mermaid render error: ${err.message || err}`
+        mermaidSrc.insertAdjacentElement('afterend', errorEl)
+      }
+
+      try {
+        const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+        // mermaid v9 and v10 compatibility
+        if (typeof renderFn === 'string') {
+          renderMermaid(renderFn)
+        } else {
+          renderFn.then(({ svg }) => renderMermaid(svg)).catch(handleError)
+        }
+      } catch (err) {
+        handleError(err)
+      }
+    })
+  }
+
+  const codeToMermaid = $article => {
+    const codeMermaidEle = $article.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    const $article = document.getElementById('article-container')
+    if (!$article) return
+
+    if (true) codeToMermaid($article)
+    const $mermaid = $article.querySelectorAll('.mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章" type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/zh-CN_blogs/js/search/local-search.js"></script></div></div></body></html>

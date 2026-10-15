@@ -1,0 +1,752 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>开发环境和包管理：macOS / Linux 跨平台实战 | Dfexsite</title><meta name="author" content="dt1dr"><meta name="copyright" content="dt1dr"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="前言目前这种环境配置方案的时效性很强，如果你在2027年以后读到这里建议不要直接照搬，毕竟当下的生态只能算是agent-friendly 而不是agent native。下面的使用场景涉及使用多种不同编程语言的纯软件开发，但是基本都是轻资产的场景，笔者目前对游戏开发&#x2F;嵌入式&#x2F;硬件设计了解不深，所以可能这份经验用不上。  工具选型与日常工作流：mise、uv、Micromamba">
+<meta property="og:type" content="article">
+<meta property="og:title" content="开发环境和包管理：macOS &#x2F; Linux 跨平台实战">
+<meta property="og:url" content="https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-1/index.html">
+<meta property="og:site_name" content="Dfexsite">
+<meta property="og:description" content="前言目前这种环境配置方案的时效性很强，如果你在2027年以后读到这里建议不要直接照搬，毕竟当下的生态只能算是agent-friendly 而不是agent native。下面的使用场景涉及使用多种不同编程语言的纯软件开发，但是基本都是轻资产的场景，笔者目前对游戏开发&#x2F;嵌入式&#x2F;硬件设计了解不深，所以可能这份经验用不上。  工具选型与日常工作流：mise、uv、Micromamba">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://dt1dr.github.io/zh-CN_blogs/img/DevOpsCover.png">
+<meta property="article:published_time" content="2026-10-14T19:50:06.000Z">
+<meta property="article:modified_time" content="2026-10-15T06:04:55.345Z">
+<meta property="article:author" content="dt1dr">
+<meta property="article:tag" content="DevOps">
+<meta property="article:tag" content="Dotfiles">
+<meta property="article:tag" content="Environment">
+<meta property="article:tag" content="Linux">
+<meta property="article:tag" content="Tooling">
+<meta property="article:tag" content="macOS">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://dt1dr.github.io/zh-CN_blogs/img/DevOpsCover.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "开发环境和包管理：macOS / Linux 跨平台实战",
+  "url": "https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-1/",
+  "image": "https://dt1dr.github.io/zh-CN_blogs/img/DevOpsCover.png",
+  "datePublished": "2026-10-14T19:50:06.000Z",
+  "dateModified": "2026-10-15T06:04:55.345Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "dt1dr",
+      "url": "https://dt1dr.github.io/zh-CN_blogs"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/zh-CN_blogs/img/favicon.png"><link rel="canonical" href="https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-1/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/zh-CN_blogs/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        const data = { value }
+
+        if (ttl != null) {
+          data.expiry = Date.now() + ttl * 86400000
+        }
+
+        localStorage.setItem(key, JSON.stringify(data))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return
+
+        try {
+          const data = JSON.parse(itemStr)
+
+          if (data.expiry && Date.now() > data.expiry) {
+            localStorage.removeItem(key)
+            return
+          }
+
+          return data.value
+        } catch {
+          localStorage.removeItem(key)
+        }
+      }
+    }
+
+    const scriptCache = new Map()
+    const cssCache = new Map()
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => {
+        if (scriptCache.has(url)) {
+          return scriptCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+
+          script.src = url
+          script.async = true
+
+          for (const key in attr) {
+            script.setAttribute(key, attr[key])
+          }
+
+          script.onload = resolve
+          script.onerror = reject
+
+          document.head.appendChild(script)
+        })
+
+        scriptCache.set(url, promise)
+
+        return promise
+      },
+      getCSS: (url, id) => {
+        if (cssCache.has(url)) {
+          return cssCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const link = document.createElement('link')
+
+          link.rel = 'stylesheet'
+          link.href = url
+
+          if (id) {
+            link.id = id
+          }
+
+          link.onload = resolve
+          link.onerror = reject
+
+          document.head.appendChild(link)
+        })
+
+        cssCache.set(url, promise)
+
+        return promise
+      },
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]')
+      const activateDarkMode = () => {
+        document.documentElement.dataset.theme = 'dark'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.dataset.theme = 'light'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/zh-CN_blogs/',
+  algolia: undefined,
+  localSearch: {"path":"/zh-CN_blogs/search.json","preload":false,"top_n_per_article":1,"unescape":false,"pagination":{"enable":true,"hitsPerPage":8},"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":false,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'null',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '开发环境和包管理：macOS / Linux 跨平台实战',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><meta name="generator" content="Hexo 8.1.2"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/zh-CN_blogs/img/avatar.jpg" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/zh-CN_blogs/archives/"><div class="headline">文章</div><div class="length-num">14</div></a><a href="/zh-CN_blogs/tags/"><div class="headline">标签</div><div class="length-num">40</div></a><a href="/zh-CN_blogs/categories/"><div class="headline">分类</div><div class="length-num">6</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-folder"></i><span> 归档</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/zh-CN_blogs/archives/"><i class="fa-fw fas fa-archive"></i><span> 时间轴</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/about/"><i class="fa-fw fas fa-heart"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/zh-CN_blogs/img/DevOpsCover.png);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/zh-CN_blogs/"><span class="site-name">Dfexsite</span></a><a class="nav-page-title" href="/zh-CN_blogs/"><span class="site-name">开发环境和包管理：macOS / Linux 跨平台实战</span><span class="site-name"><i class="fa-solid fa-circle-arrow-left"></i><span>  返回首页</span></span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-folder"></i><span> 归档</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/zh-CN_blogs/archives/"><i class="fa-fw fas fa-archive"></i><span> 时间轴</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/about/"><i class="fa-fw fas fa-heart"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">开发环境和包管理：macOS / Linux 跨平台实战</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2026-10-14T19:50:06.000Z" title="发表于 2026-10-14 14:50:06">2026-10-14</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2026-10-15T06:04:55.345Z" title="更新于 2026-10-15 01:04:55">2026-10-15</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/zh-CN_blogs/categories/%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/">开发工具</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">浏览量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>目前这种环境配置方案的时效性很强，如果你在2027年以后读到这里建议不要直接照搬，毕竟当下的生态只能算是agent-friendly 而不是agent native。<br>下面的使用场景涉及使用多种不同编程语言的纯软件开发，但是基本都是轻资产的场景，笔者目前对游戏开发&#x2F;嵌入式&#x2F;硬件设计了解不深，所以可能这份经验用不上。</p>
+<hr>
+<h2 id="工具选型与日常工作流：mise、uv、Micromamba、Pixi"><a href="#工具选型与日常工作流：mise、uv、Micromamba、Pixi" class="headerlink" title="工具选型与日常工作流：mise、uv、Micromamba、Pixi"></a>工具选型与日常工作流：mise、uv、Micromamba、Pixi</h2><h3 id="架构分层：职责单一原则"><a href="#架构分层：职责单一原则" class="headerlink" title="架构分层：职责单一原则"></a>架构分层：职责单一原则</h3><p>笔者有一台 M1 Pro 的MacBook，从高中毕业起一直用到现在。很多开发者的机器，特别是从学生时代一路用过来的机器，之所以变成环境屎山，核心在于工具职责越界。例如同时使用 <code>conda</code> 与 <code>pip</code> 管理同一个 Python 项目的依赖。解决冲突的唯一途径是<strong>确立清晰的分层边界</strong>。如果你去各个管理工具软件的官网看，其实很多工具都是<strong>可以胜任</strong>另外一件工具的工作的，但是这里需要权衡（trade-off）的是软件工具数量的心智负担和环境混乱程度（熵）的心智负担。一个经典的比喻是厨具界的两个极端：一把中式菜刀 VS 一整套十几把西式菜刀。如果没有个人癖好那最好还是选一个折中的组合方案。</p>
+<pre><code class="highlight mermaid">flowchart BT
+    subgraph L1[&quot;01 · 操作系统基础设施&quot;]
+
+        direction LR
+        OS[&quot;Homebrew / apt&quot;]
+        CC[&quot;C / C++ 工具链&quot;]
+    end
+
+    subgraph L2[&quot;02 · 运行时版本管理&quot;]
+        direction LR
+        M[&quot;mise&quot;]
+        MR[&quot;Node.js · Go · Rust · Java&quot;]
+        M --- MR
+    end
+
+    subgraph L3[&quot;03 · 命令行与临时沙盒&quot;]
+        direction LR
+        T1[&quot;uv tool&quot;]
+        T2[&quot;pixi global&quot;]
+        T3[&quot;micromamba&quot;]
+    end
+
+    subgraph L4[&quot;04 · 项目层环境&quot;]
+        direction LR
+        D1[&quot;uv&quot;]
+        D2[&quot;Pixi&quot;]
+        E1[&quot;Python 项目 · .venv/&quot;]
+        E2[&quot;科学计算 / 多语言 · .pixi/&quot;]
+        D1 --- E1
+        D2 --- E2
+    end
+
+    L1 --&gt; L2 --&gt; L3 --&gt; L4
+
+    classDef os fill:#E8E7E3,stroke:#A8A69F,color:#45443F,stroke-width:1.5px
+    classDef runtime fill:#DCE7E1,stroke:#789483,color:#344E41,stroke-width:1.5px
+    classDef cli fill:#E2E8F0,stroke:#8293AD,color:#394D68,stroke-width:1.5px
+    classDef project fill:#E9E4EF,stroke:#9886AB,color:#534568,stroke-width:1.5px
+    classDef detail fill:#FFFFFF,stroke:#CBD5E1,color:#64748B,stroke-width:1px
+
+    class OS,CC os
+    class M runtime
+    class T1,T2,T3 cli
+    class D1,D2 project
+    class MR,E1,E2 detail
+
+    style L1 fill:#F7F7F5,stroke:#C6C4BE,color:#45443F,stroke-width:1px
+    style L2 fill:#F4F8F5,stroke:#B5C5BA,color:#344E41,stroke-width:1px
+    style L3 fill:#F5F7FA,stroke:#BCC7D7,color:#394D68,stroke-width:1px
+    style L4 fill:#F8F6FA,stroke:#C9BED4,color:#534568,stroke-width:1px
+
+    linkStyle default stroke:#9CA3AF,stroke-width:1.4px
+</code></pre>
+
+<h3 id="基础环境初始化"><a href="#基础环境初始化" class="headerlink" title="基础环境初始化"></a>基础环境初始化</h3><p>这里只保留最有代表性的命令，具体安装方式、架构兼容和参数最好还是看官方的 latest 文档，尤其别把几年以前的 <code>curl | sh</code> 当圣旨。</p>
+<h4 id="macOS（Homebrew-作为主要管理）"><a href="#macOS（Homebrew-作为主要管理）" class="headerlink" title="macOS（Homebrew 作为主要管理）"></a>macOS（Homebrew 作为主要管理）</h4><p>对于个人 Mac，先准备 Xcode Command Line Tools 和 Homebrew：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">xcode-select --install</span><br><span class="line"><span class="comment"># Homebrew 的安装命令请直接从 https://brew.sh/ 获取</span></span><br></pre></td></tr></table></figure>
+
+<p>之后把常用工具交给 Homebrew 管理即可：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">brew install git mise uv pixi</span><br><span class="line"></span><br><span class="line"><span class="comment"># 有conda 风格环境的使用/兼容需求时再装</span></span><br><span class="line">brew install micromamba</span><br></pre></td></tr></table></figure>
+
+<p>注意：<code>mise</code>、<code>uv</code>、<code>Pixi</code> 各自也提供独立安装方式。Homebrew 胜在统一升级，官方安装器则可能更早拿到新版本。<strong>同一个工具最好只选择一种安装渠道</strong>，不然 PATH 里的多个同名可执行文件迟早会坑死自己。</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://brew.sh/">Homebrew 官方网站</a></li>
+<li><a target="_blank" rel="noopener" href="https://mise.jdx.dev/installing-mise.html">mise 安装文档（latest）</a></li>
+<li><a target="_blank" rel="noopener" href="https://docs.astral.sh/uv/getting-started/installation/">uv 安装文档</a></li>
+<li><a target="_blank" rel="noopener" href="https://pixi.sh/latest/installation/">Pixi 安装文档（latest）</a></li>
+<li><a target="_blank" rel="noopener" href="https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html">Micromamba 安装文档（latest）</a></li>
+</ul>
+<h4 id="Linux（Debian-Ubuntu-系；区分有-Root-和无-Root）"><a href="#Linux（Debian-Ubuntu-系；区分有-Root-和无-Root）" class="headerlink" title="Linux（Debian&#x2F;Ubuntu 系；区分有 Root 和无 Root）"></a>Linux（Debian&#x2F;Ubuntu 系；区分有 Root 和无 Root）</h4><p>如果有 <code>sudo</code> 权限，可以先用系统包管理器安装基础构建工具：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> apt update</span><br><span class="line"><span class="built_in">sudo</span> apt install -y build-essential git curl ca-certificates pkg-config</span><br></pre></td></tr></table></figure>
+
+<p>如果没有 Root 权限，例如实验室服务器或学校的远程机器，<code>mise</code>、<code>uv</code>、<code>Pixi</code> 都有用户态安装方式，不必为了安装开发工具去折腾系统 Python。下面仅给出入口，实际运行前建议自己先看一眼官方安装脚本。</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://mise.jdx.dev/installing-mise.html">mise 官方安装方式</a></li>
+<li><a target="_blank" rel="noopener" href="https://docs.astral.sh/uv/getting-started/installation/">uv 官方安装方式</a></li>
+<li><a target="_blank" rel="noopener" href="https://pixi.sh/latest/installation/">Pixi 官方安装方式</a></li>
+<li><a target="_blank" rel="noopener" href="https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html">Micromamba 官方安装方式</a></li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 用户级独立安装示意（按需选择）</span></span><br><span class="line">curl -fsSL https://mise.run | sh</span><br><span class="line">curl -LsSf https://astral.sh/uv/install.sh | sh</span><br><span class="line">curl -fsSL https://pixi.sh/install.sh | sh</span><br><span class="line"><span class="string">&quot;<span class="variable">$&#123;SHELL&#125;</span>&quot;</span> &lt;(curl -L micro.mamba.pm)</span><br></pre></td></tr></table></figure>
+
+<p>安装工具本身和项目环境是否能复现是两回事。共享 Linux 服务器上的网络限制、Home 配额和文件系统布局会直接影响缓存与安装性能，这部分之后再说。</p>
+<h4 id="Shell-配置（-zshrc-或-bashrc）"><a href="#Shell-配置（-zshrc-或-bashrc）" class="headerlink" title="Shell 配置（~/.zshrc 或 ~/.bashrc）"></a>Shell 配置（<code>~/.zshrc</code> 或 <code>~/.bashrc</code>）</h4><p>这里需要灵活变通一点，真的不能照抄，最好是自己折腾完之后找AI核对确认一遍。</p>
+<p>将以下配置添加到对应的 Shell 启动文件中，统一管理工具路径和 mise 环境激活。注意：如果官方安装器已经添加了 PATH，就没必要重复写好几份。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 1. 用户态工具目录</span></span><br><span class="line"><span class="built_in">export</span> PATH=<span class="string">&quot;<span class="variable">$HOME</span>/.local/bin:<span class="variable">$HOME</span>/.pixi/bin:<span class="variable">$PATH</span>&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 2. 激活 mise Shell 集成（动态管理工具版本与环境变量）</span></span><br><span class="line"><span class="keyword">if</span> <span class="built_in">command</span> -v mise &gt;/dev/null 2&gt;&amp;1; <span class="keyword">then</span></span><br><span class="line">    <span class="keyword">if</span> [ -n <span class="string">&quot;<span class="variable">$&#123;ZSH_VERSION:-&#125;</span>&quot;</span> ]; <span class="keyword">then</span></span><br><span class="line">        <span class="built_in">eval</span> <span class="string">&quot;<span class="subst">$(mise activate zsh)</span>&quot;</span></span><br><span class="line">    <span class="keyword">elif</span> [ -n <span class="string">&quot;<span class="variable">$&#123;BASH_VERSION:-&#125;</span>&quot;</span> ]; <span class="keyword">then</span></span><br><span class="line">        <span class="built_in">eval</span> <span class="string">&quot;<span class="subst">$(mise activate bash)</span>&quot;</span></span><br><span class="line">    <span class="keyword">fi</span></span><br><span class="line"><span class="keyword">fi</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>配置说明：</strong></p>
+<ul>
+<li><strong>PATH</strong>：使通过用户级安装方式部署的 uv、Pixi 等工具可以直接调用。碰到 <code>command not found</code> 时，先检查安装位置和 <code>command -v</code>，不要不分青红皂白追加十行 PATH。</li>
+<li><strong>mise</strong>：通过 Shell Hook 根据当前目录和项目配置动态管理工具版本。与基于 Shim 的机制不同，<code>mise activate</code> 主要用于交互式 Shell。非交互式脚本可以直接使用 <code>mise exec</code>。</li>
+<li><strong>缓存目录</strong>：对于个人电脑，我现在更倾向于先使用默认值，不必在每份 Dotfiles 里写死路径。确实需要自定义时再使用 <code>UV_CACHE_DIR</code>、<code>PIXI_CACHE_DIR</code> 等环境变量。</li>
+</ul>
+<p>如果你的 Shell 启动文件已经比较复杂，建议参考 <a target="_blank" rel="noopener" href="https://mise.jdx.dev/shell-setup.html">mise 官方 Shell 配置</a>，而不是反复叠加不同教程里的初始化片段。</p>
+<p>对于已经熟悉于conda, mamba 等工具的老<del>牢</del>同学，建议添加以下别名减少心智负担：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">alias</span> conda=<span class="string">&quot;micromamba&quot;</span></span><br><span class="line"><span class="built_in">alias</span> mamba=<span class="string">&quot;micromamba&quot;</span></span><br><span class="line"><span class="comment"># 比如下面这个就是用新工具无感替换老工具的例子</span></span><br><span class="line"><span class="comment"># alias ls=&#x27;eza --group-directories-first --icons=auto --color=auto&#x27;</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<h4 id="mise：让运行时版本跟着项目走"><a href="#mise：让运行时版本跟着项目走" class="headerlink" title="mise：让运行时版本跟着项目走"></a>mise：让运行时版本跟着项目走</h4><p>在这套方案里，<code>mise</code> 负责选择和管理除了<code>python</code>以外绝大部分开发工具和语言运行时的版本。很多语言都有自己的“多版本运行时管理器”，但是Mise可以取代它们。比如java&#x2F;JDK (干掉<code>sdkman</code>), <code>maven</code>&#x2F;<code>gradle</code>，Scala&#x2F;<code>sbt</code>, go, rust, ruby, node.js (干掉<code>nvm</code>&#x2F;<code>fnm</code>)。</p>
+<p>实际上 mise 也能管理 Python，但如果这个项目已经用 uv python pin 或 Pixi 来决定 Python 环境，就没必要再让 mise 对同一个解释器指手画脚。陌生仓库里的 mise.toml 如果包含任务、Hook 或环境变量配置，也建议先看一眼再执行或信任。</p>
+<p>以node为例，如果只是临时需要一个版本，你甚至不必修改任何配置文件：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 临时用 Node.js 24 执行一条命令，不改当前 Shell 和项目配置</span></span><br><span class="line">mise <span class="built_in">exec</span> node@24 -- node --version</span><br></pre></td></tr></table></figure>
+
+<p>如果是一个长期维护的项目，就应该把运行时版本写进仓库。比如在一个独立的演示目录中：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">mkdir</span> demo-runtime &amp;&amp; <span class="built_in">cd</span> demo-runtime</span><br><span class="line"></span><br><span class="line"><span class="comment">#下载/安装 Node.js 24，并在项目配置里声明它</span></span><br><span class="line"></span><br><span class="line">mise use node@24</span><br><span class="line"></span><br><span class="line"><span class="comment"># 查看当前目录使用的工具及实际可执行文件</span></span><br><span class="line"></span><br><span class="line">mise <span class="built_in">ls</span> --current</span><br><span class="line">mise <span class="built_in">which</span> node</span><br><span class="line"></span><br><span class="line"><span class="comment"># 已按上文激活 mise 的交互式 Shell，可以直接用</span></span><br><span class="line"></span><br><span class="line">node --version</span><br><span class="line"></span><br><span class="line"><span class="comment"># 在脚本、CI 或没有加载 Shell Hook 的场景，显式执行更稳妥</span></span><br><span class="line"></span><br><span class="line">mise <span class="built_in">exec</span> -- node --version</span><br></pre></td></tr></table></figure>
+
+<p>执行 <code>mise use</code> 后，通常会得到一个很简单的 <code>mise.toml</code>：</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[tools]</span><br><span class="line">node = &quot;24&quot;</span><br></pre></td></tr></table></figure>
+
+<p>下次从 Git 克隆这个项目，在项目目录执行 <code>mise install</code> 就可以安装清单声明的工具。需要注意：<code>node = &quot;24&quot;</code> 固定的是 24 这个主版本系列，不是某个精确的补丁版本。如果项目对工具链版本一致性比较敏感，可以额外生成 <code>mise.lock</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 在已经有 mise.toml 的项目中</span></span><br><span class="line"></span><br><span class="line">mise lock</span><br><span class="line">mise install --locked</span><br></pre></td></tr></table></figure>
+
+<p>把 mise.toml 和 mise.lock 一起提交即可。它锁定的是 mise 管理的工具版本，并不能取代 Node 项目的依赖锁文件，更不能取代 uv.lock、pixi.lock。<br>另外，<code>mise use --global node@24</code> 可以设置个人机器上的默认 Node.js 版本；项目自己的 <code>mise.toml</code> 则可以覆盖这个默认值。笔者更倾向于全局只放个人常用工具，项目版本尽量写在仓库里，不然换一台电脑就又得猜当年到底装了什么。</p>
+<p>官方补充：<a target="_blank" rel="noopener" href="https://mise.jdx.dev/getting-started">mise Getting started</a>、<a target="_blank" rel="noopener" href="https://mise.jdx.dev/dev-tools/">Dev tools 与常用命令</a> 、<a target="_blank" rel="noopener" href="https://mise.jdx.dev/dev-tools/mise-lock.html">mise.lock</a>、<a target="_blank" rel="noopener" href="https://mise.jdx.dev/cli/trust.html">配置文件信任机制</a>。</p>
+<h3 id="项目级工程范式"><a href="#项目级工程范式" class="headerlink" title="项目级工程范式"></a>项目级工程范式</h3><p><strong>一个项目只认一个主要的环境来源</strong>。工具能互相调用，不等于它们应该同时修改同一套依赖状态。</p>
+<h4 id="方案-A：纯-Python-现代化工作流（以-uv-为基石）"><a href="#方案-A：纯-Python-现代化工作流（以-uv-为基石）" class="headerlink" title="方案 A：纯 Python 现代化工作流（以 uv 为基石）"></a>方案 A：纯 Python 现代化工作流（以 <code>uv</code> 为基石）</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 初始化纯 Python 项目</span></span><br><span class="line">uv init demo-service &amp;&amp; <span class="built_in">cd</span> demo-service</span><br><span class="line">uv python pin 3.14</span><br><span class="line">uv add httpx fastapi pydantic uvicorn</span><br><span class="line"></span><br><span class="line"><span class="comment"># 锁定与同步</span></span><br><span class="line"><span class="comment"># 依赖求解</span></span><br><span class="line">uv lock</span><br><span class="line"><span class="comment"># 根据已有锁文件安装</span></span><br><span class="line">uv <span class="built_in">sync</span> --locked</span><br><span class="line"></span><br><span class="line"><span class="comment"># 在项目环境里运行命令</span></span><br><span class="line">uv run python -c <span class="string">&quot;import fastapi, httpx, pydantic; print(&#x27;environment OK&#x27;)&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 写好 main.py 并定义 app 之后，可以启动服务：</span></span><br><span class="line"><span class="comment"># uv run uvicorn main:app --reload</span></span><br></pre></td></tr></table></figure>
+
+<p>平时使用 <code>uv run</code> 时，uv 本来也会按项目状态自动处理锁文件和环境同步，不需要每次手动跑一遍 <code>uv lock</code>。</p>
+<ul>
+<li><strong>Git 规范</strong>：<ul>
+<li><strong>应该提交</strong>：<code>pyproject.toml</code>、<code>uv.lock</code>，以及项目使用的 <code>.python-version</code>。</li>
+<li><strong>应该忽略</strong>：<code>.venv/</code>。</li>
+</ul>
+</li>
+</ul>
+<p>官方补充：<a target="_blank" rel="noopener" href="https://docs.astral.sh/uv/guides/projects/">uv Working on projects</a> 和 <a target="_blank" rel="noopener" href="https://docs.astral.sh/uv/concepts/projects/sync/">Locking and syncing</a>。</p>
+<h4 id="方案-B：科学计算与多语言工作流（以-Pixi-为基础）"><a href="#方案-B：科学计算与多语言工作流（以-Pixi-为基础）" class="headerlink" title="方案 B：科学计算与多语言工作流（以 Pixi 为基础）"></a>方案 B：科学计算与多语言工作流（以 <code>Pixi</code> 为基础）</h4><p>下面使用 <code>pixi.toml</code> 清单模板。Pixi 也可以集成到 <code>pyproject.toml</code>，但具体表名和命名空间不同。大概了解结构就好不要照搬，尤其涉及 PyTorch、CUDA 或特定 channel 时，平台兼容问题不是写一份 TOML 就能自动解决的。</p>
+<figure class="highlight toml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="section">[workspace]</span></span><br><span class="line"><span class="attr">name</span> = <span class="string">&quot;deep-vision&quot;</span></span><br><span class="line"><span class="attr">version</span> = <span class="string">&quot;0.1.0&quot;</span></span><br><span class="line"><span class="attr">channels</span> = [<span class="string">&quot;conda-forge&quot;</span>, <span class="string">&quot;bioconda&quot;</span>]</span><br><span class="line"><span class="attr">platforms</span> = [<span class="string">&quot;osx-arm64&quot;</span>, <span class="string">&quot;linux-64&quot;</span>]</span><br><span class="line"></span><br><span class="line"><span class="section">[dependencies]</span></span><br><span class="line"><span class="attr">python</span> = <span class="string">&quot;3.14.*&quot;</span></span><br><span class="line"><span class="attr">numpy</span> = <span class="string">&quot;&gt;=2.4&quot;</span></span><br><span class="line"><span class="attr">opencv</span> = <span class="string">&quot;*&quot;</span></span><br><span class="line"><span class="attr">samtools</span> = <span class="string">&quot;*&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="section">[pypi-dependencies]</span></span><br><span class="line"><span class="attr">httpx</span> = <span class="string">&quot;*&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="section">[tasks]</span></span><br><span class="line"><span class="attr">test</span> = <span class="string">&quot;python -c &#x27;import numpy; print(numpy.__version__)&#x27;&quot;</span></span><br><span class="line"><span class="attr">run</span> = <span class="string">&quot;python train.py&quot;</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 首次创建/更新锁文件</span></span><br><span class="line">pixi lock</span><br><span class="line"></span><br><span class="line"><span class="comment"># 按已有锁文件安装，检查清单和锁文件是否一致</span></span><br><span class="line">pixi install --locked</span><br><span class="line"></span><br><span class="line"><span class="comment"># 执行预定义任务</span></span><br><span class="line">pixi run --locked <span class="built_in">test</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><strong>Git 规范</strong>：<ul>
+<li><strong>应该提交</strong>：<code>pixi.toml</code>（或者集成 Pixi 配置的 <code>pyproject.toml</code>）、<code>pixi.lock</code>。</li>
+<li><strong>应该忽略</strong>：<code>.pixi/</code>（项目环境目录，可以根据清单与锁文件重建，但重建速度取决于缓存和文件系统，未必是毫秒级）。</li>
+</ul>
+</li>
+</ul>
+<p>官方补充：<a target="_blank" rel="noopener" href="https://pixi.sh/latest/reference/pixi_manifest/">Pixi Manifest（latest）</a>、<a target="_blank" rel="noopener" href="https://pixi.sh/latest/python/pyproject_toml/">pyproject.toml 集成</a>、<a target="_blank" rel="noopener" href="https://pixi.sh/latest/reference/cli/pixi/install/">pixi install 参数</a>。</p>
+<h4 id="Micromamba-到底放在哪里？"><a href="#Micromamba-到底放在哪里？" class="headerlink" title="Micromamba 到底放在哪里？"></a>Micromamba 到底放在哪里？</h4><p>Micromamba, 又或者 mamba, 主要起到的是一个<strong>兼容已有 conda 生态、临时启动独立环境</strong>的作用。你完全可以认为前面的这些现代潮酷工具是在装X，用回自己熟悉的conda。但是相比Anaconda&#x2F;miniconda&#x2F;miniforge这些基于conda的软件，最佳实践仍然是尽可能轻量化+尽可能使用开源channel+换成更快的mamba系。</p>
+<p>碰到别人给了一份传统的 <code>environment.yml</code>，或要快速复现旧项目时，Micromamba 可以很方便；但新项目既然已经选了 Pixi，就没必要在 <code>.pixi/</code> 里面和Micromamba互相套来套去，最后让两个工具轮流修改同一环境。<code>mise</code> 管工具版本、<code>uv</code> 和 <code>Pixi</code> 管各自项目依赖、Micromamba 处理历史遗留场景，职责明确就行。</p>
+<h3 id="日常使用与环境维护"><a href="#日常使用与环境维护" class="headerlink" title="日常使用与环境维护"></a>日常使用与环境维护</h3><p>前面介绍的 Shell 配置提供了跨平台的通用基线，但在实际使用中，环境管理的性能不仅仅取决于包管理器本身，还取决于缓存布局和任务执行方式。</p>
+<p>GPT-6 给了个AI味很重的对齐句式：</p>
+<blockquote>
+<p><strong>配置与锁文件持久化、依赖缓存就近存储、运行环境按需重建、计算结果独立保存。</strong></p>
+</blockquote>
+<p>对于本地直连 SSD 或 NVMe 工作站，通常无需额外调整缓存目录。uv 和 Pixi 的默认缓存策略已经能够满足大多数开发需求。</p>
+<p>通过以下命令检查实际环境：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看工具版本与实际路径</span></span><br><span class="line">mise --version</span><br><span class="line">uv --version</span><br><span class="line">pixi --version</span><br><span class="line"><span class="built_in">command</span> -v mise</span><br><span class="line"><span class="built_in">command</span> -v uv</span><br><span class="line"><span class="built_in">command</span> -v pixi</span><br><span class="line"></span><br><span class="line"><span class="comment"># 查看 uv 缓存目录</span></span><br><span class="line">uv cache <span class="built_in">dir</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 查看 Pixi 环境与配置</span></span><br><span class="line">pixi info</span><br><span class="line"></span><br><span class="line"><span class="comment"># 查看 Python 实际解析路径（注意是否处于项目环境中）</span></span><br><span class="line"><span class="built_in">command</span> -v python</span><br><span class="line"><span class="built_in">command</span> -v python3</span><br></pre></td></tr></table></figure>
+
+<p><strong>最佳实践：</strong></p>
+<ul>
+<li>保留项目级 <code>.venv/</code> 和 <code>.pixi/</code>，避免不必要的重复安装。</li>
+<li>使用锁文件控制项目依赖版本，不依赖全局 Python 包。</li>
+<li>通过 <code>uv run</code> 或 <code>pixi run</code> 执行项目命令，减少环境误用。</li>
+<li>不建议仅为节省磁盘空间而频繁删除缓存；缓存能够显著减少重复下载与安装。</li>
+</ul>
+<h4 id="缓存检查与清理"><a href="#缓存检查与清理" class="headerlink" title="缓存检查与清理"></a>缓存检查与清理</h4><p>缓存有助于性能优化，但长期使用也别忘了清理。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># uv：查看缓存目录</span></span><br><span class="line">uv cache <span class="built_in">dir</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># uv：清理不再需要的缓存条目</span></span><br><span class="line">uv cache prune</span><br><span class="line"></span><br><span class="line"><span class="comment"># uv：彻底清空缓存（谨慎使用）</span></span><br><span class="line">uv cache clean</span><br><span class="line"></span><br><span class="line"><span class="comment"># Pixi：查看相关配置和环境信息</span></span><br><span class="line">pixi info</span><br><span class="line"></span><br><span class="line"><span class="comment"># Pixi：按当前版本确认缓存清理选项</span></span><br><span class="line">pixi clean cache --<span class="built_in">help</span></span><br></pre></td></tr></table></figure>
+
+<p>不建议将彻底清空缓存作为每日或每次作业的固定步骤，否则会失去缓存复用带来的性能收益。</p>
+<p>这里还有一个很容易混淆的地方：<strong>缓存目录和项目环境目录并不是同一个东西</strong>。<code>UV_CACHE_DIR</code> 不直接决定 <code>.venv/</code> 的位置；<code>PIXI_CACHE_DIR</code> 也不直接移动项目的 <code>.pixi/envs/</code>。清理缓存和删除环境都可能带来重复安装，但它们不是同一种操作。</p>
+<h3 id="从个人工作站走向共享服务器"><a href="#从个人工作站走向共享服务器" class="headerlink" title="从个人工作站走向共享服务器"></a>从个人工作站走向共享服务器</h3><p>以上基本是个人 macOS &#x2F; Linux 工作站上的日常方案，很简单吧？但是一旦把项目放进学校&#x2F;实验室&#x2F;公司的共享服务器、HPC 集群和 Agent 自动化运行的宿主机，考虑的事情就多了。</p>
+<p>举个栗子，有些机器的 <code>$HOME</code> 挂在 NFS、Lustre 等共享文件系统上，可以跨机器报存工作目录，但是很慢；有的计算节点不能联外网，只能自己scp&#x2F;rsync上去；还有的任务跑了几个小时后会被调度器或 Agent 强制终止。此时即使 <code>pixi.lock</code> 或 <code>uv.lock</code> 完好，也未必意味着运行环境已经满足宿主机、存储和进程生命周期的所有约束。</p>
+<p>后续文章会继续讨论 <strong>CUDA&#x2F;ABI、共享 Scratch、Slurm，以及 Agent 进程被 SIGKILL 后如何重建环境</strong>。这种知识太占脑子内存了。真要上集群的时候，再按实际平台和管理员文档处理现场给agent注入知识就好了。</p>
+<hr>
+<h3 id="参考与延伸阅读（References）"><a href="#参考与延伸阅读（References）" class="headerlink" title="参考与延伸阅读（References）"></a>参考与延伸阅读（References）</h3><ul>
+<li><p><a target="_blank" rel="noopener" href="https://mise.jdx.dev/getting-started">mise Getting started</a></p>
+</li>
+<li><p><a target="_blank" rel="noopener" href="https://docs.astral.sh/uv/guides/projects/">uv Projects</a></p>
+</li>
+<li><p><a target="_blank" rel="noopener" href="https://pixi.sh/latest/">Pixi Documentation（latest）</a></p>
+</li>
+<li><p><a target="_blank" rel="noopener" href="https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html">Micromamba Installation（latest）</a></p>
+</li>
+<li><p>Zang, X. C. (2026). <a target="_blank" rel="noopener" href="https://x-zang.github.io/blog/switch-from-conda-to-pixi/">Switching from conda to pixi</a>。本文关于 Pixi 全局工具与缓存目录的讨论参考了这篇文章。</p>
+</li>
+<li><p>mise-en-place. <a target="_blank" rel="noopener" href="https://mise.jdx.dev/">mise Documentation: Polyglot tool version manager</a>。详述了 mise 的版本管理、Shell 集成及与其他环境工具共存的方式。</p>
+</li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://dt1dr.github.io/zh-CN_blogs">dt1dr</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-1/">https://dt1dr.github.io/zh-CN_blogs/2026/10/14/package2026-1/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://dt1dr.github.io/zh-CN_blogs" target="_blank">Dfexsite</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/zh-CN_blogs/tags/DevOps/">DevOps</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Tooling/">Tooling</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Environment/">Environment</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Dotfiles/">Dotfiles</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/macOS/">macOS</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Linux/">Linux</a></div><div class="post-share"><div class="social-share" data-image="/zh-CN_blogs/img/DevOpsCover.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"><img class="cover" src="/zh-CN_blogs/img/DevOpsCover.png" onerror="onerror=null;src='/zh-CN_blogs/img/404.jpg'" alt="cover of previous post"><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</div></div><div class="info-2"><div class="info-item-1">前言上一篇文章主要讨论如何在 macOS &#x2F; Linux 上安装环境工具、管理项目依赖以及维护缓存。到这里为止，似乎只要提交了 uv.lock 或 pixi.lock，别人就能复现你的工作环境。 但是经常复现别人代码的孩子都知道：依赖可求解、环境可安装、程序能运行其实是三个不同的挑战。特别是还要在特定 GPU 服务器、HPC 集群和 Agent 自动执行场景中。想要配置好环境其实很多东西已经超出包管理器的控制边界之外，造...</div></div></div></a><a class="pagination-related" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么"><img class="cover" src="/zh-CN_blogs/img/DevOpsCover.png" onerror="onerror=null;src='/zh-CN_blogs/img/404.jpg'" alt="cover of next post"><div class="info text-right"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">开发环境和包管理：Conda之后还有什么</div></div><div class="info-2"><div class="info-item-1">前言这几年豪情满天的Rust社区把开发工具链里面的很多关键工具轮子都用现代标准重新搓了一遍（Rewrite It In Rust, RIIR）。虽然我们完全可以用20年代初的那些教程里面的开发工具链和包管理工具来搭建自己的开发环境，但是看到小众潮酷的那些现代特性和性能提升，谁能忍住不去找一份最佳实践来取悦自己呢？尽管根据笔者乐观预计，到了2027年及以后，AI agent的配置环境能力将会彻底超越一般工程师，但是对环境管理的品味和...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么"><img class="cover" src="/zh-CN_blogs/img/DevOpsCover.png" alt="cover"><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-10-14</div><div class="info-item-2">开发环境和包管理：Conda之后还有什么</div></div><div class="info-2"><div class="info-item-1">前言这几年豪情满天的Rust社区把开发工具链里面的很多关键工具轮子都用现代标准重新搓了一遍（Rewrite It In Rust, RIIR）。虽然我们完全可以用20年代初的那些教程里面的开发工具链和包管理工具来搭建自己的开发环境，但是看到小众潮酷的那些现代特性和性能提升，谁能忍住不去找一份最佳实践来取悦自己呢？尽管根据笔者乐观预计，到了2027年及以后，AI agent的配置环境能力将会彻底超越一般工程师，但是对环境管理的品味和...</div></div></div></a><a class="pagination-related" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"><img class="cover" src="/zh-CN_blogs/img/DevOpsCover.png" alt="cover"><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-10-14</div><div class="info-item-2">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</div></div><div class="info-2"><div class="info-item-1">前言上一篇文章主要讨论如何在 macOS &#x2F; Linux 上安装环境工具、管理项目依赖以及维护缓存。到这里为止，似乎只要提交了 uv.lock 或 pixi.lock，别人就能复现你的工作环境。 但是经常复现别人代码的孩子都知道：依赖可求解、环境可安装、程序能运行其实是三个不同的挑战。特别是还要在特定 GPU 服务器、HPC 集群和 Agent 自动执行场景中。想要配置好环境其实很多东西已经超出包管理器的控制边界之外，造...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/zh-CN_blogs/img/avatar.jpg" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">dt1dr</div><div class="author-info-description">计算机科学专业，ML Infra爱好者，数学门外汉</div><div class="site-data"><a href="/zh-CN_blogs/archives/"><div class="headline">文章</div><div class="length-num">14</div></a><a href="/zh-CN_blogs/tags/"><div class="headline">标签</div><div class="length-num">40</div></a><a href="/zh-CN_blogs/categories/"><div class="headline">分类</div><div class="length-num">6</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/dt1dr"><i class="fab fa-github"></i><span>Follow Me</span></a></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%89%8D%E8%A8%80"><span class="toc-number">1.</span> <span class="toc-text">前言</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%B7%A5%E5%85%B7%E9%80%89%E5%9E%8B%E4%B8%8E%E6%97%A5%E5%B8%B8%E5%B7%A5%E4%BD%9C%E6%B5%81%EF%BC%9Amise%E3%80%81uv%E3%80%81Micromamba%E3%80%81Pixi"><span class="toc-number">2.</span> <span class="toc-text">工具选型与日常工作流：mise、uv、Micromamba、Pixi</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%9E%B6%E6%9E%84%E5%88%86%E5%B1%82%EF%BC%9A%E8%81%8C%E8%B4%A3%E5%8D%95%E4%B8%80%E5%8E%9F%E5%88%99"><span class="toc-number">2.1.</span> <span class="toc-text">架构分层：职责单一原则</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%9F%BA%E7%A1%80%E7%8E%AF%E5%A2%83%E5%88%9D%E5%A7%8B%E5%8C%96"><span class="toc-number">2.2.</span> <span class="toc-text">基础环境初始化</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#macOS%EF%BC%88Homebrew-%E4%BD%9C%E4%B8%BA%E4%B8%BB%E8%A6%81%E7%AE%A1%E7%90%86%EF%BC%89"><span class="toc-number">2.2.1.</span> <span class="toc-text">macOS（Homebrew 作为主要管理）</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#Linux%EF%BC%88Debian-Ubuntu-%E7%B3%BB%EF%BC%9B%E5%8C%BA%E5%88%86%E6%9C%89-Root-%E5%92%8C%E6%97%A0-Root%EF%BC%89"><span class="toc-number">2.2.2.</span> <span class="toc-text">Linux（Debian&#x2F;Ubuntu 系；区分有 Root 和无 Root）</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#Shell-%E9%85%8D%E7%BD%AE%EF%BC%88-zshrc-%E6%88%96-bashrc%EF%BC%89"><span class="toc-number">2.2.3.</span> <span class="toc-text">Shell 配置（~&#x2F;.zshrc 或 ~&#x2F;.bashrc）</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#mise%EF%BC%9A%E8%AE%A9%E8%BF%90%E8%A1%8C%E6%97%B6%E7%89%88%E6%9C%AC%E8%B7%9F%E7%9D%80%E9%A1%B9%E7%9B%AE%E8%B5%B0"><span class="toc-number">2.2.4.</span> <span class="toc-text">mise：让运行时版本跟着项目走</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E9%A1%B9%E7%9B%AE%E7%BA%A7%E5%B7%A5%E7%A8%8B%E8%8C%83%E5%BC%8F"><span class="toc-number">2.3.</span> <span class="toc-text">项目级工程范式</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E6%96%B9%E6%A1%88-A%EF%BC%9A%E7%BA%AF-Python-%E7%8E%B0%E4%BB%A3%E5%8C%96%E5%B7%A5%E4%BD%9C%E6%B5%81%EF%BC%88%E4%BB%A5-uv-%E4%B8%BA%E5%9F%BA%E7%9F%B3%EF%BC%89"><span class="toc-number">2.3.1.</span> <span class="toc-text">方案 A：纯 Python 现代化工作流（以 uv 为基石）</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E6%96%B9%E6%A1%88-B%EF%BC%9A%E7%A7%91%E5%AD%A6%E8%AE%A1%E7%AE%97%E4%B8%8E%E5%A4%9A%E8%AF%AD%E8%A8%80%E5%B7%A5%E4%BD%9C%E6%B5%81%EF%BC%88%E4%BB%A5-Pixi-%E4%B8%BA%E5%9F%BA%E7%A1%80%EF%BC%89"><span class="toc-number">2.3.2.</span> <span class="toc-text">方案 B：科学计算与多语言工作流（以 Pixi 为基础）</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#Micromamba-%E5%88%B0%E5%BA%95%E6%94%BE%E5%9C%A8%E5%93%AA%E9%87%8C%EF%BC%9F"><span class="toc-number">2.3.3.</span> <span class="toc-text">Micromamba 到底放在哪里？</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%97%A5%E5%B8%B8%E4%BD%BF%E7%94%A8%E4%B8%8E%E7%8E%AF%E5%A2%83%E7%BB%B4%E6%8A%A4"><span class="toc-number">2.4.</span> <span class="toc-text">日常使用与环境维护</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E7%BC%93%E5%AD%98%E6%A3%80%E6%9F%A5%E4%B8%8E%E6%B8%85%E7%90%86"><span class="toc-number">2.4.1.</span> <span class="toc-text">缓存检查与清理</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%BB%8E%E4%B8%AA%E4%BA%BA%E5%B7%A5%E4%BD%9C%E7%AB%99%E8%B5%B0%E5%90%91%E5%85%B1%E4%BA%AB%E6%9C%8D%E5%8A%A1%E5%99%A8"><span class="toc-number">2.5.</span> <span class="toc-text">从个人工作站走向共享服务器</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%8F%82%E8%80%83%E4%B8%8E%E5%BB%B6%E4%BC%B8%E9%98%85%E8%AF%BB%EF%BC%88References%EF%BC%89"><span class="toc-number">2.6.</span> <span class="toc-text">参考与延伸阅读（References）</span></a></li></ol></li></ol></div></div><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>系列文章</span></div><div class="aside-list"><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</a><time datetime="2026-10-15T04:50:46.000Z" title="发表于 2026-10-14 23:50:46">2026-10-14</time></div></div><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战">开发环境和包管理：macOS / Linux 跨平台实战</a><time datetime="2026-10-14T19:50:06.000Z" title="发表于 2026-10-14 14:50:06">2026-10-14</time></div></div><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么">开发环境和包管理：Conda之后还有什么</a><time datetime="2026-10-14T18:50:48.000Z" title="发表于 2026-10-14 13:50:48">2026-10-14</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</a><time datetime="2026-10-15T04:50:46.000Z" title="发表于 2026-10-14 23:50:46">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：macOS / Linux 跨平台实战"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战">开发环境和包管理：macOS / Linux 跨平台实战</a><time datetime="2026-10-14T19:50:06.000Z" title="发表于 2026-10-14 14:50:06">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：Conda之后还有什么"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么">开发环境和包管理：Conda之后还有什么</a><time datetime="2026-10-14T18:50:48.000Z" title="发表于 2026-10-14 13:50:48">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/PL-0/" title="编译器学习：Overview"><img src="/zh-CN_blogs/img/PLCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="编译器学习：Overview"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/PL-0/" title="编译器学习：Overview">编译器学习：Overview</a><time datetime="2026-10-14T18:45:24.000Z" title="发表于 2026-10-14 13:45:24">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2025/07/17/DDP-1/" title="分布式训练学习：原理、实现与优化"><img src="/zh-CN_blogs/img/MLsysCover1.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="分布式训练学习：原理、实现与优化"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2025/07/17/DDP-1/" title="分布式训练学习：原理、实现与优化">分布式训练学习：原理、实现与优化</a><time datetime="2025-07-17T22:24:32.000Z" title="发表于 2025-07-17 17:24:32">2025-07-17</time></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2020 - 2026 By dt1dr</span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/zh-CN_blogs/js/utils.js"></script><script src="/zh-CN_blogs/js/main.js"></script><div class="js-pjax"><script>(() => {
+  const parseViewBox = viewBox => {
+    if (!viewBox) return null
+    const parts = viewBox.trim().split(/[\s,]+/).map(n => Number(n))
+    if (parts.length !== 4 || parts.some(n => Number.isNaN(n))) return null
+    return parts
+  }
+
+  const getSvgViewBox = svg => {
+    const attr = parseViewBox(svg.getAttribute('viewBox'))
+    if (attr) return attr
+
+    // Fallback: use bbox to build a viewBox
+    try {
+      const bbox = svg.getBBox()
+      if (bbox && bbox.width && bbox.height) return [bbox.x, bbox.y, bbox.width, bbox.height]
+    } catch (e) {
+      // getBBox may fail on some edge cases; ignore
+    }
+
+    const w = Number(svg.getAttribute('width')) || 0
+    const h = Number(svg.getAttribute('height')) || 0
+    if (w > 0 && h > 0) return [0, 0, w, h]
+    return [0, 0, 100, 100]
+  }
+
+  const setSvgViewBox = (svg, vb) => {
+    svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2]} ${vb[3]}`)
+  }
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v))
+
+  const openSvgInNewTab = ({ source, initViewBox }) => {
+    const getClonedSvg = () => {
+      if (typeof source === 'string') {
+        const template = document.createElement('template')
+        template.innerHTML = source.trim()
+        const svg = template.content.querySelector('svg')
+        return svg ? svg.cloneNode(true) : null
+      }
+      if (source && typeof source.cloneNode === 'function') {
+        return source.cloneNode(true)
+      }
+      return null
+    }
+
+    const clone = getClonedSvg()
+    if (!clone) return
+    if (initViewBox && initViewBox.length === 4) {
+      clone.setAttribute('viewBox', initViewBox.join(' '))
+    }
+    if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    if (!clone.getAttribute('xmlns:xlink') && clone.innerHTML.includes('xlink:')) {
+      clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+    }
+    // inject background to match current theme
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    const bg = getComputedStyle(document.body).backgroundColor || (isDark ? '#1e1e1e' : '#ffffff')
+    if (!clone.style.background) clone.style.background = bg
+
+    const serializer = new XMLSerializer()
+    const svgSource = serializer.serializeToString(clone)
+    const htmlSource = `<!doctype html><html><head><meta charset="utf-8" />
+      <style>
+        html, body { width: 100%; height: 100%; margin: 0; display: flex; align-items: center; justify-content: center; background: ${bg}; }
+        svg { max-width: 100%; max-height: 100%; height: auto; width: auto; }
+      </style>
+      </head><body>${svgSource}</body></html>`
+    const blob = new Blob([htmlSource], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener')
+
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+
+  const attachMermaidViewerButton = wrap => {
+    let btn = wrap.querySelector('.mermaid-open-btn')
+    if (!btn) {
+      btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'mermaid-open-btn'
+      wrap.appendChild(btn)
+    }
+
+    btn.innerHTML = '<i class="fa fa-search fa-fw" aria-hidden="true"></i>'
+
+    if (!btn.__mermaidViewerBound) {
+      btn.addEventListener('click', e => {
+        e.preventDefault()
+        e.stopPropagation()
+        const svg = wrap.__mermaidOriginalSvg || wrap.querySelector('svg')
+        if (!svg) return
+        const initViewBox = wrap.__mermaidInitViewBox
+        openSvgInNewTab({ source: svg, initViewBox })
+      })
+      btn.__mermaidViewerBound = true
+    }
+  }
+
+  // Zoom around a point (px, py) in the SVG viewport (in viewBox coordinates)
+  const zoomAtPoint = (vb, factor, px, py) => {
+    const w = vb[2] * factor
+    const h = vb[3] * factor
+    const nx = px - (px - vb[0]) * factor
+    const ny = py - (py - vb[1]) * factor
+    return [nx, ny, w, h]
+  }
+
+  const initMermaidGestures = wrap => {
+    // Clean up previous event listeners and pending frames
+    if (wrap.__mermaidAbortController) {
+      wrap.__mermaidAbortController.abort()
+      if (wrap.__mermaidRafId) cancelAnimationFrame(wrap.__mermaidRafId)
+    }
+    const ac = new AbortController()
+    wrap.__mermaidAbortController = ac
+    const svg = wrap.querySelector('svg')
+    if (!svg) return
+
+    // Ensure viewBox exists so gestures always work
+    const initVb = getSvgViewBox(svg)
+    wrap.__mermaidInitViewBox = initVb
+    wrap.__mermaidCurViewBox = initVb.slice()
+    setSvgViewBox(svg, initVb)
+    // Disable default gestures to prevent scroll chaining and pinch-zoom penetration in Chrome
+    svg.style.touchAction = 'none'
+
+    // Cache BoundingClientRect, throttled on scroll to reduce reflow
+    let cachedRect = svg.getBoundingClientRect()
+    let rectDirty = false
+    const markRectDirty = () => { rectDirty = true }
+    window.addEventListener('resize', markRectDirty, { signal: ac.signal })
+    window.addEventListener('scroll', markRectDirty, { signal: ac.signal, capture: true })
+    const getRect = () => {
+      if (rectDirty) {
+        cachedRect = svg.getBoundingClientRect()
+        rectDirty = false
+      }
+      return cachedRect
+    }
+
+    // Precompute clamp bounds from initial viewBox
+    const minW = initVb[2] * 0.1
+    const maxW = initVb[2] * 10
+    const minH = initVb[3] * 0.1
+    const maxH = initVb[3] * 10
+    const clampVb = vb => {
+      const out = vb.slice()
+      out[2] = clamp(out[2], minW, maxW)
+      out[3] = clamp(out[3], minH, maxH)
+      return out
+    }
+
+    // Throttle DOM updates using requestAnimationFrame
+    let pendingVb = null
+    let rafId = null
+    const applyVb = () => {
+      if (pendingVb) {
+        wrap.__mermaidCurViewBox = pendingVb
+        setSvgViewBox(svg, pendingVb)
+        pendingVb = null
+      }
+      rafId = null
+      wrap.__mermaidRafId = null
+    }
+    const setCurVb = vb => {
+      pendingVb = clampVb(vb)
+      if (!rafId) {
+        rafId = requestAnimationFrame(applyVb)
+        wrap.__mermaidRafId = rafId
+      }
+    }
+
+    const state = {
+      pointers: new Map(),
+      startVb: null,
+      startDist: 0,
+      lastPointerX: 0,
+      lastPointerY: 0
+    }
+
+    const onPointerDown = e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      svg.setPointerCapture(e.pointerId)
+      const curVb = wrap.__mermaidCurViewBox
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (state.pointers.size === 1) {
+        state.startVb = curVb.slice()
+        state.lastPointerX = e.clientX
+        state.lastPointerY = e.clientY
+      } else if (state.pointers.size === 2) {
+        const pts = [...state.pointers.values()]
+        const dx = pts[0].x - pts[1].x
+        const dy = pts[0].y - pts[1].y
+        state.startDist = Math.hypot(dx, dy)
+        state.startVb = curVb.slice()
+      }
+    }
+
+    const onPointerMove = e => {
+      if (!state.pointers.has(e.pointerId)) return
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      const curVb = wrap.__mermaidCurViewBox
+      const rect = getRect()
+      if (state.pointers.size === 1 && state.startVb) {
+        const p = state.pointers.values().next().value
+        const dxClient = p.x - state.lastPointerX
+        const dyClient = p.y - state.lastPointerY
+        state.lastPointerX = p.x
+        state.lastPointerY = p.y
+        const dx = dxClient * (curVb[2] / rect.width)
+        const dy = dyClient * (curVb[3] / rect.height)
+        setCurVb([curVb[0] - dx, curVb[1] - dy, curVb[2], curVb[3]])
+        return
+      }
+      if (state.pointers.size === 2 && state.startVb && state.startDist > 0) {
+        const pts = [...state.pointers.values()]
+        const dx = pts[0].x - pts[1].x
+        const dy = pts[0].y - pts[1].y
+        const dist = Math.hypot(dx, dy)
+        if (!dist) return
+        const factor = state.startDist / dist
+        const cx = (pts[0].x + pts[1].x) / 2
+        const cy = (pts[0].y + pts[1].y) / 2
+        const px = curVb[0] + (cx - rect.left) * (curVb[2] / rect.width)
+        const py = curVb[1] + (cy - rect.top) * (curVb[3] / rect.height)
+        setCurVb(zoomAtPoint(state.startVb, factor, px, py))
+      }
+    }
+
+    const onPointerUpOrCancel = e => {
+      // Release PointerCapture to avoid event capture anomalies
+      if (svg.hasPointerCapture && svg.hasPointerCapture(e.pointerId)) {
+        svg.releasePointerCapture(e.pointerId)
+      }
+      state.pointers.delete(e.pointerId)
+      if (state.pointers.size === 0) {
+        state.startVb = null
+        state.startDist = 0
+      } else if (state.pointers.size === 1) {
+        const p = state.pointers.values().next().value
+        state.lastPointerX = p.x
+        state.lastPointerY = p.y
+      }
+    }
+
+    const onWheel = e => {
+      // Prevent event bubbling from triggering external scroll
+      e.preventDefault()
+      e.stopPropagation()
+      // Normalize deltaY across deltaMode (Chrome uses pixels, Safari uses lines)
+      let delta = e.deltaY
+      if (e.deltaMode === 1) delta *= 16
+      else if (e.deltaMode === 2) delta *= 400
+
+      // Continuous zoom factor: smoother than fixed 1.1/0.9 steps
+      const zoomFactor = Math.pow(1.001, delta)
+
+      const curVb = wrap.__mermaidCurViewBox
+      const rect = getRect()
+      const px = curVb[0] + (e.clientX - rect.left) * (curVb[2] / rect.width)
+      const py = curVb[1] + (e.clientY - rect.top) * (curVb[3] / rect.height)
+      setCurVb(zoomAtPoint(curVb, zoomFactor, px, py))
+    }
+
+    const onDblClick = () => {
+      const init = wrap.__mermaidInitViewBox
+      if (init) setCurVb(init)
+    }
+
+    svg.addEventListener('pointerdown', onPointerDown, { signal: ac.signal })
+    svg.addEventListener('pointermove', onPointerMove, { signal: ac.signal })
+    svg.addEventListener('pointerup', onPointerUpOrCancel, { signal: ac.signal })
+    svg.addEventListener('pointercancel', onPointerUpOrCancel, { signal: ac.signal })
+    svg.addEventListener('wheel', onWheel, { passive: false, signal: ac.signal })
+    svg.addEventListener('dblclick', onDblClick, { signal: ac.signal })
+  }
+
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      // Clean up event listeners before removing old SVG
+      if (item.__mermaidAbortController) {
+        item.__mermaidAbortController.abort()
+      }
+      const oldSvg = item.querySelector('svg')
+      if (oldSvg) oldSvg.remove()
+      let config = {}
+      try {
+        config = mermaidSrc.dataset.config ? JSON.parse(mermaidSrc.dataset.config) : {}
+      } catch (e) {
+        console.warn('[mermaid] failed to parse dataset.config:', e)
+      }
+      if (!config.theme) {
+        config.theme = theme
+      }
+      const mermaidThemeConfig = `%%{init: ${JSON.stringify(config)}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+        if (false) initMermaidGestures(item)
+        item.__mermaidOriginalSvg = svg
+        if (true) attachMermaidViewerButton(item)
+      }
+
+      const handleError = err => {
+        console.error(`[mermaid] render failed for block #${index}:`, err)
+        const errorEl = document.createElement('div')
+        errorEl.className = 'mermaid-error'
+        errorEl.textContent = `Mermaid render error: ${err.message || err}`
+        mermaidSrc.insertAdjacentElement('afterend', errorEl)
+      }
+
+      try {
+        const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+        // mermaid v9 and v10 compatibility
+        if (typeof renderFn === 'string') {
+          renderMermaid(renderFn)
+        } else {
+          renderFn.then(({ svg }) => renderMermaid(svg)).catch(handleError)
+        }
+      } catch (err) {
+        handleError(err)
+      }
+    })
+  }
+
+  const codeToMermaid = $article => {
+    const codeMermaidEle = $article.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    const $article = document.getElementById('article-container')
+    if (!$article) return
+
+    if (true) codeToMermaid($article)
+    const $mermaid = $article.querySelectorAll('.mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章" type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/zh-CN_blogs/js/search/local-search.js"></script></div></div></body></html>

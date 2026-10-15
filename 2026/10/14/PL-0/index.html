@@ -1,0 +1,784 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>编译器学习：Overview | Dfexsite</title><meta name="author" content="dt1dr"><meta name="copyright" content="dt1dr"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="前言本科最后一学期上了 Modern Compiler Construction（COMP 4121）[^1]。整门课基本就是用 Scala 给一门叫 Amy 的小型函数式语言写编译器，从源代码一路写到 WebAssembly。 这个系列是我上完课后重新消化的笔记，不按作业顺序复述课程内容。之后研究生阶段大概率还会上一门偏优化的编译器课，到时候会接着往后端写。 我觉得编译器&#x2F;编译原理里面">
+<meta property="og:type" content="article">
+<meta property="og:title" content="编译器学习：Overview">
+<meta property="og:url" content="https://dt1dr.github.io/zh-CN_blogs/2026/10/14/PL-0/index.html">
+<meta property="og:site_name" content="Dfexsite">
+<meta property="og:description" content="前言本科最后一学期上了 Modern Compiler Construction（COMP 4121）[^1]。整门课基本就是用 Scala 给一门叫 Amy 的小型函数式语言写编译器，从源代码一路写到 WebAssembly。 这个系列是我上完课后重新消化的笔记，不按作业顺序复述课程内容。之后研究生阶段大概率还会上一门偏优化的编译器课，到时候会接着往后端写。 我觉得编译器&#x2F;编译原理里面">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://dt1dr.github.io/zh-CN_blogs/img/PLCover.png">
+<meta property="article:published_time" content="2026-10-14T18:45:24.000Z">
+<meta property="article:modified_time" content="2026-10-15T05:55:20.546Z">
+<meta property="article:author" content="dt1dr">
+<meta property="article:tag" content="Amy">
+<meta property="article:tag" content="Compiler">
+<meta property="article:tag" content="Functional-Programming">
+<meta property="article:tag" content="PLT">
+<meta property="article:tag" content="Scala">
+<meta property="article:tag" content="WebAssembly">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://dt1dr.github.io/zh-CN_blogs/img/PLCover.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "编译器学习：Overview",
+  "url": "https://dt1dr.github.io/zh-CN_blogs/2026/10/14/PL-0/",
+  "image": "https://dt1dr.github.io/zh-CN_blogs/img/PLCover.png",
+  "datePublished": "2026-10-14T18:45:24.000Z",
+  "dateModified": "2026-10-15T05:55:20.546Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "dt1dr",
+      "url": "https://dt1dr.github.io/zh-CN_blogs"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/zh-CN_blogs/img/favicon.png"><link rel="canonical" href="https://dt1dr.github.io/zh-CN_blogs/2026/10/14/PL-0/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/zh-CN_blogs/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        const data = { value }
+
+        if (ttl != null) {
+          data.expiry = Date.now() + ttl * 86400000
+        }
+
+        localStorage.setItem(key, JSON.stringify(data))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return
+
+        try {
+          const data = JSON.parse(itemStr)
+
+          if (data.expiry && Date.now() > data.expiry) {
+            localStorage.removeItem(key)
+            return
+          }
+
+          return data.value
+        } catch {
+          localStorage.removeItem(key)
+        }
+      }
+    }
+
+    const scriptCache = new Map()
+    const cssCache = new Map()
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => {
+        if (scriptCache.has(url)) {
+          return scriptCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+
+          script.src = url
+          script.async = true
+
+          for (const key in attr) {
+            script.setAttribute(key, attr[key])
+          }
+
+          script.onload = resolve
+          script.onerror = reject
+
+          document.head.appendChild(script)
+        })
+
+        scriptCache.set(url, promise)
+
+        return promise
+      },
+      getCSS: (url, id) => {
+        if (cssCache.has(url)) {
+          return cssCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const link = document.createElement('link')
+
+          link.rel = 'stylesheet'
+          link.href = url
+
+          if (id) {
+            link.id = id
+          }
+
+          link.onload = resolve
+          link.onerror = reject
+
+          document.head.appendChild(link)
+        })
+
+        cssCache.set(url, promise)
+
+        return promise
+      },
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]')
+      const activateDarkMode = () => {
+        document.documentElement.dataset.theme = 'dark'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.dataset.theme = 'light'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/zh-CN_blogs/',
+  algolia: undefined,
+  localSearch: {"path":"/zh-CN_blogs/search.json","preload":false,"top_n_per_article":1,"unescape":false,"pagination":{"enable":true,"hitsPerPage":8},"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":false,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'null',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '编译器学习：Overview',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><meta name="generator" content="Hexo 8.1.2"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/zh-CN_blogs/img/avatar.jpg" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/zh-CN_blogs/archives/"><div class="headline">文章</div><div class="length-num">14</div></a><a href="/zh-CN_blogs/tags/"><div class="headline">标签</div><div class="length-num">40</div></a><a href="/zh-CN_blogs/categories/"><div class="headline">分类</div><div class="length-num">6</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-folder"></i><span> 归档</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/zh-CN_blogs/archives/"><i class="fa-fw fas fa-archive"></i><span> 时间轴</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/about/"><i class="fa-fw fas fa-heart"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/zh-CN_blogs/img/PLCover.png);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/zh-CN_blogs/"><span class="site-name">Dfexsite</span></a><a class="nav-page-title" href="/zh-CN_blogs/"><span class="site-name">编译器学习：Overview</span><span class="site-name"><i class="fa-solid fa-circle-arrow-left"></i><span>  返回首页</span></span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-folder"></i><span> 归档</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/zh-CN_blogs/archives/"><i class="fa-fw fas fa-archive"></i><span> 时间轴</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/about/"><i class="fa-fw fas fa-heart"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">编译器学习：Overview</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2026-10-14T18:45:24.000Z" title="发表于 2026-10-14 13:45:24">2026-10-14</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2026-10-15T05:55:20.546Z" title="更新于 2026-10-15 00:55:20">2026-10-15</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/zh-CN_blogs/categories/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/">编程语言</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">浏览量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>本科最后一学期上了 <strong>Modern Compiler Construction</strong>（COMP 4121）[^1]。整门课基本就是用 Scala 给一门叫 <strong>Amy</strong> 的小型函数式语言写编译器，从源代码一路写到 WebAssembly。</p>
+<p>这个系列是我上完课后重新消化的笔记，不按作业顺序复述课程内容。之后研究生阶段大概率还会上一门偏优化的编译器课，到时候会接着往后端写。</p>
+<p>我觉得编译器&#x2F;编译原理里面真正要理解的问题是这一个：</p>
+<blockquote>
+<p>一段文本怎样一步步获得结构、绑定和类型，最后变成机器能跑的东西？每一步换了表示，程序的意思怎样保持不变？</p>
+</blockquote>
+<p>后面每一篇基本都在回答它的某一部分。</p>
+<h2 id="同一行代码，三层意思"><a href="#同一行代码，三层意思" class="headerlink" title="同一行代码，三层意思"></a>同一行代码，三层意思</h2><p>看到 <code>1 + 2 * 3</code>，人会直接算出 7。编译器得分三次看它：</p>
+<ul>
+<li><strong>语法</strong>：结构是什么？按优先级是 <code>1 + (2 * 3)</code>。</li>
+<li><strong>静态语义</strong>：它合不合法？操作数是不是 <code>Int(32)</code>、变量有没有定义。这些不用运行就能判断。</li>
+<li><strong>动态语义</strong>：真跑起来会怎样？按什么顺序求值，结果是什么，会不会出错。</li>
+</ul>
+<p>后两层可以用两个记号区分：</p>
+<p>$$<br>\Gamma \vdash 1 + 2 : \operatorname{Int}(32) \qquad\qquad 1 + 2 \Downarrow 3<br>$$</p>
+<p>左边说”它的类型是 <code>Int(32)</code>“，右边说”它算出来是 3”。这两件事要分开看。通过类型检查的程序照样可能除以零、<code>match</code> 不到任何分支，或者直接 <code>error(&quot;...&quot;)</code>。类型检查器只保证它检查的那些规则成立。</p>
+<h2 id="从-Amy-到-WebAssembly"><a href="#从-Amy-到-WebAssembly" class="headerlink" title="从 Amy 到 WebAssembly"></a>从 Amy 到 WebAssembly</h2><p>整条流水线长这样：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    SRC[&quot;Source&lt;br/&gt;源代码&quot;]
+    TOK[&quot;Tokens&lt;br/&gt;词法单元&quot;]
+    NOM[&quot;Nominal AST&lt;br/&gt;名称语法树&quot;]
+    SYM[&quot;Symbolic AST&lt;br/&gt;符号化语法树&quot;]
+    OK[&quot;Checked AST&lt;br/&gt;类型检查完成&quot;]
+
+    WAT[&quot;.wat&lt;br/&gt;WebAssembly 文本&quot;]
+    WASM[&quot;.wasm&lt;br/&gt;WebAssembly 二进制&quot;]
+    RUN[&quot;Execution&lt;br/&gt;运行&quot;]
+
+    INTERP[&quot;Direct Execution&lt;br/&gt;解释执行&quot;]
+
+    SRC --&gt;|&quot;Lexer · 词法分析&quot;| TOK
+    TOK --&gt;|&quot;Parser · 语法分析&quot;| NOM
+    NOM --&gt;|&quot;Name Resolution · 名称解析&quot;| SYM
+    SYM --&gt;|&quot;Type Checking · 类型检查&quot;| OK
+
+    OK --&gt;|&quot;CodeGen · 代码生成&quot;| WAT
+    WAT --&gt;|&quot;wat2wasm · 汇编&quot;| WASM
+    WASM --&gt;|&quot;Wasmtime · 执行引擎&quot;| RUN
+
+    OK -.-&gt;|&quot;Interpreter · 解释器&quot;| INTERP
+
+    classDef source fill:#F3F0E9,stroke:#B9B0A2,color:#5C5348,stroke-width:1.5px
+    classDef ast fill:#E5EDF3,stroke:#8FA8BC,color:#344F63,stroke-width:1.5px
+    classDef checked fill:#365C70,stroke:#365C70,color:#FFFFFF,stroke-width:2px
+    classDef wasm fill:#F2E7DF,stroke:#C8A48D,color:#805B45,stroke-width:1.5px
+    classDef execute fill:#E3EDE5,stroke:#8EAA94,color:#3F634B,stroke-width:1.5px
+
+    class SRC source
+    class TOK,NOM,SYM ast
+    class OK checked
+    class WAT,WASM wasm
+    class RUN,INTERP execute
+
+    linkStyle default stroke:#9BA5A9,stroke-width:1.5px</code></pre>
+
+<p>课程里 Interpreter 是 Project 1，最先写，但它并不跳过前端。实验直接给了一个编译好的前端 jar，解释器拿到的已经是检查过的 AST[^2]。先写解释器是为了先搞清楚 Amy 的程序是什么意思，之后再去考虑怎么把它编译出来。</p>
+<p>这是一个示例程序:</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">object</span> <span class="title">Demo</span></span></span><br><span class="line">  <span class="function"><span class="keyword">def</span> <span class="title">twicePlusTwo</span></span>(x: <span class="type">Int</span>(<span class="number">32</span>)): <span class="type">Int</span>(<span class="number">32</span>) :=</span><br><span class="line">    <span class="keyword">val</span> y: <span class="type">Int</span>(<span class="number">32</span>) = x + <span class="number">1</span>;</span><br><span class="line">    y * <span class="number">2</span></span><br><span class="line">  <span class="keyword">end</span> twicePlusTwo</span><br><span class="line"></span><br><span class="line">  <span class="type">Std</span>.printInt(twicePlusTwo(<span class="number">20</span>))</span><br><span class="line"><span class="keyword">end</span> <span class="type">Demo</span></span><br></pre></td></tr></table></figure>
+
+<p>输出 <code>42</code>。中间发生了这些事：</p>
+<p><strong>Lexing</strong>：把字符切成 token。<code>def</code> 是关键字，<code>x</code> 是标识符，<code>20</code> 是整数字面量，空白和注释在这里就扔掉了。这一步还不知道 <code>x</code> 指向谁。</p>
+<p><strong>Parsing</strong>：按文法把 token 排成树。函数体可能是长成这样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Let(y: Int(32))</span><br><span class="line">├── value: Add(Var(x), 1)</span><br><span class="line">└── body:  Mul(Var(y), 2)</span><br></pre></td></tr></table></figure>
+
+<p>Amy 里的 <code>val y = ...; ...</code> 本身就是一个表达式，<code>;</code> 是序列运算符，不能像 C 那样在语句末尾随手加。<code>y</code> 只在分号后面的部分可见[^3]。这种细节决定了 parser 最后建出一棵什么样的树。</p>
+<p><strong>Name Analysis</strong>：parser 只认识字符串。名称解析要回答”这个 <code>x</code> 到底是哪个 <code>x</code>“。看这个合法的函数：</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">bump</span></span>(x: <span class="type">Int</span>(<span class="number">32</span>)): <span class="type">Int</span>(<span class="number">32</span>) :=</span><br><span class="line">  <span class="keyword">val</span> x: <span class="type">Int</span>(<span class="number">32</span>) = x + <span class="number">1</span>;</span><br><span class="line">  x</span><br><span class="line"><span class="keyword">end</span> bump</span><br></pre></td></tr></table></figure>
+
+<p><code>x + 1</code> 里的 <code>x</code> 是参数，最后一行的 <code>x</code> 是新定义的局部变量，也就是 shadowing。光比较字符串分不出这两个，所以 Amy 会把 Nominal AST 里的名字换成各有身份的 Identifier，得到 Symbolic AST[^4]。</p>
+<p><strong>Type Checking</strong>：名字定下来，类型才好检查：</p>
+<p>$$<br>\frac{\Gamma \vdash x : \operatorname{Int}(32) \qquad \Gamma \vdash 1 : \operatorname{Int}(32)}<br>     {\Gamma \vdash x + 1 : \operatorname{Int}(32)}<br>$$</p>
+<p>Amy 明明要求处处写类型标注，课程的类型检查器内部用的却是简化版的 Hindley–Milner：遍历 AST 生成形如 <code>T1 = T2</code> 的约束，再做 unification。因为 Amy 没有高阶函数，也没有泛型 ADT，约束里不会出现复合类型，unification 写起来很简单[^4]。</p>
+<p><strong>Code Generation</strong>：最后一步要在目标机器上把程序的意思实现出来。Wasm 是栈机，<code>1 + 2</code> 大概就是：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">i32.const 1</span><br><span class="line">i32.const 2</span><br><span class="line">i32.add      ;; [] → [1] → [1, 2] → [3]</span><br></pre></td></tr></table></figure>
+
+<p>真正生成函数的时候还得处理局部变量的编号、调用约定、ADT 在内存里怎么摆、怎么接上 <code>Std</code> 的运行时函数。这部分是课程PA里工作量较多的一块[^5]，期末的时候考的手写WASM我也没写对TAT。</p>
+<h2 id="为什么要分阶段"><a href="#为什么要分阶段" class="headerlink" title="为什么要分阶段"></a>为什么要分阶段</h2><p>分 phase 当然方便拆文件，但更有用的是：每过一个阶段，后面的阶段就能少操心一类问题。</p>
+<table>
+<thead>
+<tr>
+<th align="left">Phase</th>
+<th align="left">之后可以默认的事</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">Lexer</td>
+<td align="left">输入是合法 token，带着源码位置</td>
+</tr>
+<tr>
+<td align="left">Parser</td>
+<td align="left">结构明确，没有语法错误</td>
+</tr>
+<tr>
+<td align="left">Name Analyzer</td>
+<td align="left">每个引用都指向一个确定的定义</td>
+</tr>
+<tr>
+<td align="left">Type Checker</td>
+<td align="left">满足 Amy 的类型规则</td>
+</tr>
+</tbody></table>
+<p>所以这三种错误会在不同阶段报出来：</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">1</span> +              <span class="comment">// 语法错误</span></span><br><span class="line">unknownVar + <span class="number">1</span>   <span class="comment">// 名字错误</span></span><br><span class="line"><span class="literal">true</span> + <span class="number">1</span>         <span class="comment">// 类型错误</span></span><br></pre></td></tr></table></figure>
+
+<p>类型检查器不用去猜某个名字指向谁，代码生成器也不用再判断 <code>true + 1</code> 合不合法。每一层只负责自己那件事，出了 bug 也比较好定位。</p>
+<p>工业编译器当然没这么整齐，经常合并阶段，或者在好几层 IR 之间反复 lowering。不过这个思路是通用的：每层表示负责建立一些不变量，下一层就可以直接拿来用。</p>
+<h2 id="解释器和编译器应该得到同一个答案"><a href="#解释器和编译器应该得到同一个答案" class="headerlink" title="解释器和编译器应该得到同一个答案"></a>解释器和编译器应该得到同一个答案</h2><p>解释器沿着 AST 走，用一个环境记录变量的值，边走边算。编译器则先生成一个目标程序，交给别人去跑。两种方式都应该符合同一套语义：</p>
+<p>$$<br>\operatorname{Obs}(\operatorname{Interpret}(P)) &#x3D; \operatorname{Obs}(\operatorname{Execute}(\operatorname{Compile}(P)))<br>$$</p>
+<p>$\operatorname{Obs}$ 指可观察的行为，主要是输出和最终结果。这条式子只是直觉，严格说起来还得定义清楚溢出、运行时错误、IO 这些边界情况。</p>
+<p>但它在调试的时候真的有用。解释器打印 42，Wasm 打印 41，那就是代码生成哪里把程序的意思改了，顺着去找就行。所以我更愿意把编译器理解成一个保持语义的变换：表示可以换来换去，意思不能变。后面讲优化，说的也是这件事，只是多了一个要求：变换完之后程序还得更快。</p>
+<h2 id="为什么用-Scala-写"><a href="#为什么用-Scala-写" class="headerlink" title="为什么用 Scala 写"></a>为什么用 Scala 写</h2><p>主要因为程序本来就是递归的树，ADT 加模式匹配写起来最顺手：</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">enum</span> <span class="type">Expr</span>:</span><br><span class="line">  <span class="keyword">case</span> <span class="type">Lit</span>(value: <span class="type">Int</span>)</span><br><span class="line">  <span class="keyword">case</span> <span class="type">Add</span>(lhs: <span class="type">Expr</span>, rhs: <span class="type">Expr</span>)</span><br><span class="line">  <span class="keyword">case</span> <span class="type">Mul</span>(lhs: <span class="type">Expr</span>, rhs: <span class="type">Expr</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="type">Expr</span>.*</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">eval</span></span>(e: <span class="type">Expr</span>): <span class="type">Int</span> = e <span class="keyword">match</span></span><br><span class="line">  <span class="keyword">case</span> <span class="type">Lit</span>(n)    =&gt; n</span><br><span class="line">  <span class="keyword">case</span> <span class="type">Add</span>(l, r) =&gt; eval(l) + eval(r)</span><br><span class="line">  <span class="keyword">case</span> <span class="type">Mul</span>(l, r) =&gt; eval(l) * eval(r)</span><br><span class="line"></span><br><span class="line">assert(eval(<span class="type">Add</span>(<span class="type">Lit</span>(<span class="number">1</span>), <span class="type">Mul</span>(<span class="type">Lit</span>(<span class="number">2</span>), <span class="type">Lit</span>(<span class="number">3</span>)))) == <span class="number">7</span>)</span><br></pre></td></tr></table></figure>
+
+<p>有哪些节点，类型定义里写得一清二楚。每加一种操作，不管是求值、打印、常量折叠还是代码生成，都是再写一个 <code>match</code>。哪天漏了一个分支，编译器会提醒你。数据不可变也让阶段之间更干净，前一个 phase 不会偷偷改掉后一个 phase 要用的节点。</p>
+<p>代价就是经典的 Expression Problem：加操作很容易，加节点就得把所有 <code>match</code> 都改一遍。所以 Visitor 模式也不是一无是处。</p>
+<p>Lexer用的是 EPFL 的 <strong>Ziplex</strong>。Parser 用的是 EPFL 的 <strong>Scallion</strong>，一个 LL(1) parser combinator 库，背后的算法是 derivatives 加 zipper[^6]。</p>
+<h2 id="后面打算写什么？"><a href="#后面打算写什么？" class="headerlink" title="后面打算写什么？"></a>后面打算写什么？</h2><p>主要有两部分，大部分会是AI帮我写，不一定有时间。</p>
+<p><strong>前半段：从语言定义到能跑的实现。</strong> 也就是 Amy 这条线：语义和解释器、词法分析、LL(1) 与 parser combinator、名称解析、类型检查和 unification、Wasm 代码生成。每篇都会讲清楚这一层吃进什么、吐出什么、给后面保证了什么。</p>
+<p><strong>后半段：让实现变快。</strong> 这部分4121只是几节课匆匆带过讲了一大堆概念，研究生如果上PL课就写。大概包括：</p>
+<ul>
+<li>从 AST 到 CFG、SSA，看清楚为什么优化几乎都做在 IR 上而不是语法树上；</li>
+<li>Dataflow Analysis 和格（lattice）理论，以及它和抽象解释的关系；</li>
+<li>寄存器分配、指令选择？；</li>
+<li>LLVM &#x2F; MLIR 这种多层 IR 的设计，e-graph 和 equality saturation;</li>
+<li>如果硕士毕业之前来得及就记一下ML Compiler和类型理论这些.</li>
+</ul>
+<h2 id="后记"><a href="#后记" class="headerlink" title="后记"></a>后记</h2><p>这是我本科最后一学期最喜欢的课。部分材料继承自 EPFL Viktor Kunčak 的课程[^1]，风格和我原先想的那种”编译器课 &#x3D; 龙书 + 机器级优化”很不一样，它更在意一门语言怎么从形式定义落到实现上。上完有种被 PL 圈传教了的感觉。龙书确实得看，只是这套比较现代化的 Scala、ADT、类型系统理论和 Wasm <del>串起来看就很有X格</del>.</p>
+<p>FP 一直有点”学院派”或者”小众宝藏”的名声，不过 Java 8 之后，lambda、模式匹配、不可变数据已经到处都是了。纯 FP 的未来怎么办，只有天知道。但在编译器这种到处都是树的地方，这套东西确实好用。</p>
+<p><del>副作用是上完课以后看什么都想先定义个 ADT，然后写一串 transformation，最后莫名其妙地想 Rewrite It In Rust。就很…</del> 豪到你了吗</p>
+<hr>
+<p>[^1]: HKUST COMP 4121, <em>Modern Compiler Construction</em>, Spring 2026. <a target="_blank" rel="noopener" href="https://hkust-taco.github.io/mcc/">课程主页</a> · <a target="_blank" rel="noopener" href="https://hkust-taco.github.io/mcc/labs/">实验目录</a></p>
+<p>[^2]: <a target="_blank" rel="noopener" href="https://hkust-taco.github.io/mcc/labs/project1-interpreter">Project 1: An Interpreter for the Amy Language</a></p>
+<p>[^3]: <a target="_blank" rel="noopener" href="https://hkust-taco.github.io/mcc/labs/amy-spec">Specification of the Amy Language</a></p>
+<p>[^4]: <a target="_blank" rel="noopener" href="https://hkust-taco.github.io/mcc/labs/project4-type-checker">Project 4: A Type Checker for the Amy Language</a></p>
+<p>[^5]: <a target="_blank" rel="noopener" href="https://hkust-taco.github.io/mcc/labs/project5-code-generation">Project 5: Code Generation for the Amy Language</a></p>
+<p>[^6]: Edelmann, Hamza &amp; Kunčak. <em>Zippy LL(1) Parsing with Derivatives</em>. PLDI 2020. <a target="_blank" rel="noopener" href="https://doi.org/10.1145/3385412.3385992">DOI</a> · <a target="_blank" rel="noopener" href="https://github.com/epfl-lara/scallion">Scallion</a></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://dt1dr.github.io/zh-CN_blogs">dt1dr</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://dt1dr.github.io/zh-CN_blogs/2026/10/14/PL-0/">https://dt1dr.github.io/zh-CN_blogs/2026/10/14/PL-0/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://dt1dr.github.io/zh-CN_blogs" target="_blank">Dfexsite</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/zh-CN_blogs/tags/Compiler/">Compiler</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/PLT/">PLT</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Amy/">Amy</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Scala/">Scala</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/WebAssembly/">WebAssembly</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Functional-Programming/">Functional-Programming</a></div><div class="post-share"><div class="social-share" data-image="/zh-CN_blogs/img/PLCover.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么"><img class="cover" src="/zh-CN_blogs/img/DevOpsCover.png" onerror="onerror=null;src='/zh-CN_blogs/img/404.jpg'" alt="cover of previous post"><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">开发环境和包管理：Conda之后还有什么</div></div><div class="info-2"><div class="info-item-1">前言这几年豪情满天的Rust社区把开发工具链里面的很多关键工具轮子都用现代标准重新搓了一遍（Rewrite It In Rust, RIIR）。虽然我们完全可以用20年代初的那些教程里面的开发工具链和包管理工具来搭建自己的开发环境，但是看到小众潮酷的那些现代特性和性能提升，谁能忍住不去找一份最佳实践来取悦自己呢？尽管根据笔者乐观预计，到了2027年及以后，AI agent的配置环境能力将会彻底超越一般工程师，但是对环境管理的品味和...</div></div></div></a><a class="pagination-related" href="/zh-CN_blogs/2025/07/17/DDP-1/" title="分布式训练学习：原理、实现与优化"><img class="cover" src="/zh-CN_blogs/img/MLsysCover1.png" onerror="onerror=null;src='/zh-CN_blogs/img/404.jpg'" alt="cover of next post"><div class="info text-right"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">分布式训练学习：原理、实现与优化</div></div><div class="info-2"><div class="info-item-1">前言看了点书和文章，让 llm 帮我生成了这么一篇总结，感觉说的挺好，自己改了改就当作是自己写了 hhh I. 分布式训练的理论基础1.1 并行计算模式分类在分布式深度学习中，常见的并行策略可从计算图的不同维度进行划分：  数据并行 (Data Parallelism)：复制完整模型到多个设备，每个设备处理数据子集 模型并行 (Model Parallelism)：将单一模型的不同层分布到不同设备上 管道并行 (Pipeline ...</div></div></div></a></nav></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/zh-CN_blogs/img/avatar.jpg" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">dt1dr</div><div class="author-info-description">计算机科学专业，ML Infra爱好者，数学门外汉</div><div class="site-data"><a href="/zh-CN_blogs/archives/"><div class="headline">文章</div><div class="length-num">14</div></a><a href="/zh-CN_blogs/tags/"><div class="headline">标签</div><div class="length-num">40</div></a><a href="/zh-CN_blogs/categories/"><div class="headline">分类</div><div class="length-num">6</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/dt1dr"><i class="fab fa-github"></i><span>Follow Me</span></a></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%89%8D%E8%A8%80"><span class="toc-number">1.</span> <span class="toc-text">前言</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%90%8C%E4%B8%80%E8%A1%8C%E4%BB%A3%E7%A0%81%EF%BC%8C%E4%B8%89%E5%B1%82%E6%84%8F%E6%80%9D"><span class="toc-number">2.</span> <span class="toc-text">同一行代码，三层意思</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BB%8E-Amy-%E5%88%B0-WebAssembly"><span class="toc-number">3.</span> <span class="toc-text">从 Amy 到 WebAssembly</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E5%88%86%E9%98%B6%E6%AE%B5"><span class="toc-number">4.</span> <span class="toc-text">为什么要分阶段</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%A7%A3%E9%87%8A%E5%99%A8%E5%92%8C%E7%BC%96%E8%AF%91%E5%99%A8%E5%BA%94%E8%AF%A5%E5%BE%97%E5%88%B0%E5%90%8C%E4%B8%80%E4%B8%AA%E7%AD%94%E6%A1%88"><span class="toc-number">5.</span> <span class="toc-text">解释器和编译器应该得到同一个答案</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E7%94%A8-Scala-%E5%86%99"><span class="toc-number">6.</span> <span class="toc-text">为什么用 Scala 写</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%90%8E%E9%9D%A2%E6%89%93%E7%AE%97%E5%86%99%E4%BB%80%E4%B9%88%EF%BC%9F"><span class="toc-number">7.</span> <span class="toc-text">后面打算写什么？</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%90%8E%E8%AE%B0"><span class="toc-number">8.</span> <span class="toc-text">后记</span></a></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</a><time datetime="2026-10-15T04:50:46.000Z" title="发表于 2026-10-14 23:50:46">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：macOS / Linux 跨平台实战"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战">开发环境和包管理：macOS / Linux 跨平台实战</a><time datetime="2026-10-14T19:50:06.000Z" title="发表于 2026-10-14 14:50:06">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：Conda之后还有什么"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-0/" title="开发环境和包管理：Conda之后还有什么">开发环境和包管理：Conda之后还有什么</a><time datetime="2026-10-14T18:50:48.000Z" title="发表于 2026-10-14 13:50:48">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/PL-0/" title="编译器学习：Overview"><img src="/zh-CN_blogs/img/PLCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="编译器学习：Overview"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/PL-0/" title="编译器学习：Overview">编译器学习：Overview</a><time datetime="2026-10-14T18:45:24.000Z" title="发表于 2026-10-14 13:45:24">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2025/07/17/DDP-1/" title="分布式训练学习：原理、实现与优化"><img src="/zh-CN_blogs/img/MLsysCover1.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="分布式训练学习：原理、实现与优化"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2025/07/17/DDP-1/" title="分布式训练学习：原理、实现与优化">分布式训练学习：原理、实现与优化</a><time datetime="2025-07-17T22:24:32.000Z" title="发表于 2025-07-17 17:24:32">2025-07-17</time></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2020 - 2026 By dt1dr</span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/zh-CN_blogs/js/utils.js"></script><script src="/zh-CN_blogs/js/main.js"></script><div class="js-pjax"><script>(() => {
+  const changeScriptToMath = article => {
+    article.querySelectorAll('script[type^="math/tex"]').forEach(el => {
+      const display = /mode=display/.test(el.type)
+      const node = document.createElement(display ? 'div' : 'span')
+      node.textContent = display
+        ? `$$${el.textContent}$$`
+        : `$${el.textContent}$`
+      el.parentNode.replaceChild(node, el)
+    })
+  }
+
+  const loadMathjax = () => {
+    const article = document.getElementById('article-container')
+    if (!article || article.querySelector('.hbe-container')) return
+    changeScriptToMath(article)
+
+    if (!window.MathJax) {
+      window.MathJax = {
+        loader: {
+          load: [
+            // Four font extension packages (optional)
+            //- '[tex]/bbm',
+            //- '[tex]/bboldx',
+            //- '[tex]/dsfont',
+            '[tex]/mhchem',
+            'ui/lazy'
+          ],
+          paths: {
+            'mathjax-newcm': '[mathjax]/../@mathjax/mathjax-newcm-font',
+
+            //- // Four font extension packages (optional)
+            //- 'mathjax-bbm-extension': '[mathjax]/../@mathjax/mathjax-bbm-font-extension',
+            //- 'mathjax-bboldx-extension': '[mathjax]/../@mathjax/mathjax-bboldx-font-extension',
+            //- 'mathjax-dsfont-extension': '[mathjax]/../@mathjax/mathjax-dsfont-font-extension',
+            'mathjax-mhchem-extension': '[mathjax]/../@mathjax/mathjax-mhchem-font-extension'
+          }
+        },
+        output: {
+          font: 'mathjax-newcm',
+        },
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          tags: 'none',
+          packages: {
+            '[+]': [
+              'mhchem'
+            ]
+          }
+        },
+        chtml: {
+          scale: 1.1
+        },
+        options: {
+          lazyMargin: '200px',
+          enableMenu: true,
+          menuOptions: {
+            settings: {
+              enrich: false  // Turn off Braille and voice narration text automatic generation
+            }
+          },
+        }
+      }
+
+      const script = document.createElement('script')
+      script.src = 'https://cdn.jsdelivr.net/npm/mathjax/tex-mml-chtml.min.js'
+      script.id = 'MathJax-script'
+      script.async = true
+      document.head.appendChild(script)
+    } else {
+      MathJax.typesetClear()
+      MathJax.typesetPromise([ article ])
+    }
+  }
+
+  btf.addGlobalFn('encrypt', loadMathjax, 'mathjax')
+  window.pjax ? loadMathjax() : window.addEventListener('load', loadMathjax)
+})()</script><script>(() => {
+  const parseViewBox = viewBox => {
+    if (!viewBox) return null
+    const parts = viewBox.trim().split(/[\s,]+/).map(n => Number(n))
+    if (parts.length !== 4 || parts.some(n => Number.isNaN(n))) return null
+    return parts
+  }
+
+  const getSvgViewBox = svg => {
+    const attr = parseViewBox(svg.getAttribute('viewBox'))
+    if (attr) return attr
+
+    // Fallback: use bbox to build a viewBox
+    try {
+      const bbox = svg.getBBox()
+      if (bbox && bbox.width && bbox.height) return [bbox.x, bbox.y, bbox.width, bbox.height]
+    } catch (e) {
+      // getBBox may fail on some edge cases; ignore
+    }
+
+    const w = Number(svg.getAttribute('width')) || 0
+    const h = Number(svg.getAttribute('height')) || 0
+    if (w > 0 && h > 0) return [0, 0, w, h]
+    return [0, 0, 100, 100]
+  }
+
+  const setSvgViewBox = (svg, vb) => {
+    svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2]} ${vb[3]}`)
+  }
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v))
+
+  const openSvgInNewTab = ({ source, initViewBox }) => {
+    const getClonedSvg = () => {
+      if (typeof source === 'string') {
+        const template = document.createElement('template')
+        template.innerHTML = source.trim()
+        const svg = template.content.querySelector('svg')
+        return svg ? svg.cloneNode(true) : null
+      }
+      if (source && typeof source.cloneNode === 'function') {
+        return source.cloneNode(true)
+      }
+      return null
+    }
+
+    const clone = getClonedSvg()
+    if (!clone) return
+    if (initViewBox && initViewBox.length === 4) {
+      clone.setAttribute('viewBox', initViewBox.join(' '))
+    }
+    if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    if (!clone.getAttribute('xmlns:xlink') && clone.innerHTML.includes('xlink:')) {
+      clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+    }
+    // inject background to match current theme
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    const bg = getComputedStyle(document.body).backgroundColor || (isDark ? '#1e1e1e' : '#ffffff')
+    if (!clone.style.background) clone.style.background = bg
+
+    const serializer = new XMLSerializer()
+    const svgSource = serializer.serializeToString(clone)
+    const htmlSource = `<!doctype html><html><head><meta charset="utf-8" />
+      <style>
+        html, body { width: 100%; height: 100%; margin: 0; display: flex; align-items: center; justify-content: center; background: ${bg}; }
+        svg { max-width: 100%; max-height: 100%; height: auto; width: auto; }
+      </style>
+      </head><body>${svgSource}</body></html>`
+    const blob = new Blob([htmlSource], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener')
+
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+
+  const attachMermaidViewerButton = wrap => {
+    let btn = wrap.querySelector('.mermaid-open-btn')
+    if (!btn) {
+      btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'mermaid-open-btn'
+      wrap.appendChild(btn)
+    }
+
+    btn.innerHTML = '<i class="fa fa-search fa-fw" aria-hidden="true"></i>'
+
+    if (!btn.__mermaidViewerBound) {
+      btn.addEventListener('click', e => {
+        e.preventDefault()
+        e.stopPropagation()
+        const svg = wrap.__mermaidOriginalSvg || wrap.querySelector('svg')
+        if (!svg) return
+        const initViewBox = wrap.__mermaidInitViewBox
+        openSvgInNewTab({ source: svg, initViewBox })
+      })
+      btn.__mermaidViewerBound = true
+    }
+  }
+
+  // Zoom around a point (px, py) in the SVG viewport (in viewBox coordinates)
+  const zoomAtPoint = (vb, factor, px, py) => {
+    const w = vb[2] * factor
+    const h = vb[3] * factor
+    const nx = px - (px - vb[0]) * factor
+    const ny = py - (py - vb[1]) * factor
+    return [nx, ny, w, h]
+  }
+
+  const initMermaidGestures = wrap => {
+    // Clean up previous event listeners and pending frames
+    if (wrap.__mermaidAbortController) {
+      wrap.__mermaidAbortController.abort()
+      if (wrap.__mermaidRafId) cancelAnimationFrame(wrap.__mermaidRafId)
+    }
+    const ac = new AbortController()
+    wrap.__mermaidAbortController = ac
+    const svg = wrap.querySelector('svg')
+    if (!svg) return
+
+    // Ensure viewBox exists so gestures always work
+    const initVb = getSvgViewBox(svg)
+    wrap.__mermaidInitViewBox = initVb
+    wrap.__mermaidCurViewBox = initVb.slice()
+    setSvgViewBox(svg, initVb)
+    // Disable default gestures to prevent scroll chaining and pinch-zoom penetration in Chrome
+    svg.style.touchAction = 'none'
+
+    // Cache BoundingClientRect, throttled on scroll to reduce reflow
+    let cachedRect = svg.getBoundingClientRect()
+    let rectDirty = false
+    const markRectDirty = () => { rectDirty = true }
+    window.addEventListener('resize', markRectDirty, { signal: ac.signal })
+    window.addEventListener('scroll', markRectDirty, { signal: ac.signal, capture: true })
+    const getRect = () => {
+      if (rectDirty) {
+        cachedRect = svg.getBoundingClientRect()
+        rectDirty = false
+      }
+      return cachedRect
+    }
+
+    // Precompute clamp bounds from initial viewBox
+    const minW = initVb[2] * 0.1
+    const maxW = initVb[2] * 10
+    const minH = initVb[3] * 0.1
+    const maxH = initVb[3] * 10
+    const clampVb = vb => {
+      const out = vb.slice()
+      out[2] = clamp(out[2], minW, maxW)
+      out[3] = clamp(out[3], minH, maxH)
+      return out
+    }
+
+    // Throttle DOM updates using requestAnimationFrame
+    let pendingVb = null
+    let rafId = null
+    const applyVb = () => {
+      if (pendingVb) {
+        wrap.__mermaidCurViewBox = pendingVb
+        setSvgViewBox(svg, pendingVb)
+        pendingVb = null
+      }
+      rafId = null
+      wrap.__mermaidRafId = null
+    }
+    const setCurVb = vb => {
+      pendingVb = clampVb(vb)
+      if (!rafId) {
+        rafId = requestAnimationFrame(applyVb)
+        wrap.__mermaidRafId = rafId
+      }
+    }
+
+    const state = {
+      pointers: new Map(),
+      startVb: null,
+      startDist: 0,
+      lastPointerX: 0,
+      lastPointerY: 0
+    }
+
+    const onPointerDown = e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      svg.setPointerCapture(e.pointerId)
+      const curVb = wrap.__mermaidCurViewBox
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (state.pointers.size === 1) {
+        state.startVb = curVb.slice()
+        state.lastPointerX = e.clientX
+        state.lastPointerY = e.clientY
+      } else if (state.pointers.size === 2) {
+        const pts = [...state.pointers.values()]
+        const dx = pts[0].x - pts[1].x
+        const dy = pts[0].y - pts[1].y
+        state.startDist = Math.hypot(dx, dy)
+        state.startVb = curVb.slice()
+      }
+    }
+
+    const onPointerMove = e => {
+      if (!state.pointers.has(e.pointerId)) return
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      const curVb = wrap.__mermaidCurViewBox
+      const rect = getRect()
+      if (state.pointers.size === 1 && state.startVb) {
+        const p = state.pointers.values().next().value
+        const dxClient = p.x - state.lastPointerX
+        const dyClient = p.y - state.lastPointerY
+        state.lastPointerX = p.x
+        state.lastPointerY = p.y
+        const dx = dxClient * (curVb[2] / rect.width)
+        const dy = dyClient * (curVb[3] / rect.height)
+        setCurVb([curVb[0] - dx, curVb[1] - dy, curVb[2], curVb[3]])
+        return
+      }
+      if (state.pointers.size === 2 && state.startVb && state.startDist > 0) {
+        const pts = [...state.pointers.values()]
+        const dx = pts[0].x - pts[1].x
+        const dy = pts[0].y - pts[1].y
+        const dist = Math.hypot(dx, dy)
+        if (!dist) return
+        const factor = state.startDist / dist
+        const cx = (pts[0].x + pts[1].x) / 2
+        const cy = (pts[0].y + pts[1].y) / 2
+        const px = curVb[0] + (cx - rect.left) * (curVb[2] / rect.width)
+        const py = curVb[1] + (cy - rect.top) * (curVb[3] / rect.height)
+        setCurVb(zoomAtPoint(state.startVb, factor, px, py))
+      }
+    }
+
+    const onPointerUpOrCancel = e => {
+      // Release PointerCapture to avoid event capture anomalies
+      if (svg.hasPointerCapture && svg.hasPointerCapture(e.pointerId)) {
+        svg.releasePointerCapture(e.pointerId)
+      }
+      state.pointers.delete(e.pointerId)
+      if (state.pointers.size === 0) {
+        state.startVb = null
+        state.startDist = 0
+      } else if (state.pointers.size === 1) {
+        const p = state.pointers.values().next().value
+        state.lastPointerX = p.x
+        state.lastPointerY = p.y
+      }
+    }
+
+    const onWheel = e => {
+      // Prevent event bubbling from triggering external scroll
+      e.preventDefault()
+      e.stopPropagation()
+      // Normalize deltaY across deltaMode (Chrome uses pixels, Safari uses lines)
+      let delta = e.deltaY
+      if (e.deltaMode === 1) delta *= 16
+      else if (e.deltaMode === 2) delta *= 400
+
+      // Continuous zoom factor: smoother than fixed 1.1/0.9 steps
+      const zoomFactor = Math.pow(1.001, delta)
+
+      const curVb = wrap.__mermaidCurViewBox
+      const rect = getRect()
+      const px = curVb[0] + (e.clientX - rect.left) * (curVb[2] / rect.width)
+      const py = curVb[1] + (e.clientY - rect.top) * (curVb[3] / rect.height)
+      setCurVb(zoomAtPoint(curVb, zoomFactor, px, py))
+    }
+
+    const onDblClick = () => {
+      const init = wrap.__mermaidInitViewBox
+      if (init) setCurVb(init)
+    }
+
+    svg.addEventListener('pointerdown', onPointerDown, { signal: ac.signal })
+    svg.addEventListener('pointermove', onPointerMove, { signal: ac.signal })
+    svg.addEventListener('pointerup', onPointerUpOrCancel, { signal: ac.signal })
+    svg.addEventListener('pointercancel', onPointerUpOrCancel, { signal: ac.signal })
+    svg.addEventListener('wheel', onWheel, { passive: false, signal: ac.signal })
+    svg.addEventListener('dblclick', onDblClick, { signal: ac.signal })
+  }
+
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      // Clean up event listeners before removing old SVG
+      if (item.__mermaidAbortController) {
+        item.__mermaidAbortController.abort()
+      }
+      const oldSvg = item.querySelector('svg')
+      if (oldSvg) oldSvg.remove()
+      let config = {}
+      try {
+        config = mermaidSrc.dataset.config ? JSON.parse(mermaidSrc.dataset.config) : {}
+      } catch (e) {
+        console.warn('[mermaid] failed to parse dataset.config:', e)
+      }
+      if (!config.theme) {
+        config.theme = theme
+      }
+      const mermaidThemeConfig = `%%{init: ${JSON.stringify(config)}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+        if (false) initMermaidGestures(item)
+        item.__mermaidOriginalSvg = svg
+        if (true) attachMermaidViewerButton(item)
+      }
+
+      const handleError = err => {
+        console.error(`[mermaid] render failed for block #${index}:`, err)
+        const errorEl = document.createElement('div')
+        errorEl.className = 'mermaid-error'
+        errorEl.textContent = `Mermaid render error: ${err.message || err}`
+        mermaidSrc.insertAdjacentElement('afterend', errorEl)
+      }
+
+      try {
+        const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+        // mermaid v9 and v10 compatibility
+        if (typeof renderFn === 'string') {
+          renderMermaid(renderFn)
+        } else {
+          renderFn.then(({ svg }) => renderMermaid(svg)).catch(handleError)
+        }
+      } catch (err) {
+        handleError(err)
+      }
+    })
+  }
+
+  const codeToMermaid = $article => {
+    const codeMermaidEle = $article.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    const $article = document.getElementById('article-container')
+    if (!$article) return
+
+    if (true) codeToMermaid($article)
+    const $mermaid = $article.querySelectorAll('.mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章" type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/zh-CN_blogs/js/search/local-search.js"></script></div></div></body></html>
