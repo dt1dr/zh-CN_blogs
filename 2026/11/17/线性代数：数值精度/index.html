@@ -1,0 +1,764 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>线性代数：矩阵计算中的舍入误差与低精度 | Dfexsite</title><meta name="author" content="dt1dr"><meta name="copyright" content="dt1dr"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="前言把模型精度从 FP32 一路压到 FP8 甚至 FP4，能换来成倍的 Tensor Core 吞吐和显存带宽减负，但代价是每一步算术都在丢信息。一次低精度矩阵乘法 $\hat A \hat B$ 的误差包括两个部分：一个是输入量化成 $\hat A, \hat B$ 时的表示误差；第二个则是随着成千上万次乘加舍入，逐步滚大的累积误差。 浮点模型（Floating-Point Model）在标准">
+<meta property="og:type" content="article">
+<meta property="og:title" content="线性代数：矩阵计算中的舍入误差与低精度">
+<meta property="og:url" content="https://dt1dr.github.io/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%95%B0%E5%80%BC%E7%B2%BE%E5%BA%A6/index.html">
+<meta property="og:site_name" content="Dfexsite">
+<meta property="og:description" content="前言把模型精度从 FP32 一路压到 FP8 甚至 FP4，能换来成倍的 Tensor Core 吞吐和显存带宽减负，但代价是每一步算术都在丢信息。一次低精度矩阵乘法 $\hat A \hat B$ 的误差包括两个部分：一个是输入量化成 $\hat A, \hat B$ 时的表示误差；第二个则是随着成千上万次乘加舍入，逐步滚大的累积误差。 浮点模型（Floating-Point Model）在标准">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://dt1dr.github.io/zh-CN_blogs/img/LACover.png">
+<meta property="article:published_time" content="2026-11-18T04:09:22.000Z">
+<meta property="article:modified_time" content="2026-11-18T07:34:01.230Z">
+<meta property="article:author" content="dt1dr">
+<meta property="article:tag" content="Linear Algebra">
+<meta property="article:tag" content="Mixed Precision">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://dt1dr.github.io/zh-CN_blogs/img/LACover.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "线性代数：矩阵计算中的舍入误差与低精度",
+  "url": "https://dt1dr.github.io/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%95%B0%E5%80%BC%E7%B2%BE%E5%BA%A6/",
+  "image": "https://dt1dr.github.io/zh-CN_blogs/img/LACover.png",
+  "datePublished": "2026-11-18T04:09:22.000Z",
+  "dateModified": "2026-11-18T07:34:01.230Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "dt1dr",
+      "url": "https://dt1dr.github.io/zh-CN_blogs"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/zh-CN_blogs/img/favicon.png"><link rel="canonical" href="https://dt1dr.github.io/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%95%B0%E5%80%BC%E7%B2%BE%E5%BA%A6/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/zh-CN_blogs/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        try {
+          const data = { value }
+
+          if (ttl != null) {
+            data.expiry = Date.now() + ttl * 86400000
+          }
+
+          localStorage.setItem(key, JSON.stringify(data))
+        } catch (e) {
+          console.error(e)
+        }
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return
+
+        try {
+          const data = JSON.parse(itemStr)
+
+          if (data.expiry && Date.now() > data.expiry) {
+            localStorage.removeItem(key)
+            return
+          }
+
+          return data.value
+        } catch {
+          localStorage.removeItem(key)
+        }
+      }
+    }
+
+    const scriptCache = new Map()
+    const cssCache = new Map()
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => {
+        if (scriptCache.has(url)) {
+          return scriptCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+
+          script.src = url
+          script.async = true
+
+          for (const key in attr) {
+            script.setAttribute(key, attr[key])
+          }
+
+          script.onload = resolve
+          script.onerror = reject
+
+          document.head.appendChild(script)
+        })
+
+        scriptCache.set(url, promise)
+
+        return promise
+      },
+      getCSS: (url, id) => {
+        if (cssCache.has(url)) {
+          return cssCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const link = document.createElement('link')
+
+          link.rel = 'stylesheet'
+          link.href = url
+
+          if (id) {
+            link.id = id
+          }
+
+          link.onload = resolve
+          link.onerror = reject
+
+          document.head.appendChild(link)
+        })
+
+        cssCache.set(url, promise)
+
+        return promise
+      },
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]')
+      const activateDarkMode = () => {
+        document.documentElement.dataset.theme = 'dark'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.dataset.theme = 'light'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/zh-CN_blogs/',
+  algolia: undefined,
+  localSearch: {"path":"/zh-CN_blogs/search.json","preload":false,"top_n_per_article":1,"unescape":false,"pagination":{"enable":true,"hitsPerPage":8},"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":false,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'null',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '线性代数：矩阵计算中的舍入误差与低精度',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><meta name="generator" content="Hexo 8.1.2"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/zh-CN_blogs/img/avatar.jpg" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/zh-CN_blogs/archives/"><div class="headline">文章</div><div class="length-num">17</div></a><a href="/zh-CN_blogs/tags/"><div class="headline">标签</div><div class="length-num">19</div></a><a href="/zh-CN_blogs/categories/"><div class="headline">分类</div><div class="length-num">6</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-folder"></i><span> 归档</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/zh-CN_blogs/archives/"><i class="fa-fw fas fa-archive"></i><span> 时间轴</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/about/"><i class="fa-fw fas fa-heart"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/zh-CN_blogs/img/LACover.png);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/zh-CN_blogs/"><span class="site-name">Dfexsite</span></a><a class="nav-page-title" href="/zh-CN_blogs/"><span class="site-name">线性代数：矩阵计算中的舍入误差与低精度</span><span class="site-name"><i class="fa-solid fa-circle-arrow-left"></i><span>  返回首页</span></span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-folder"></i><span> 归档</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/zh-CN_blogs/archives/"><i class="fa-fw fas fa-archive"></i><span> 时间轴</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></li><li><a class="site-page child" href="/zh-CN_blogs/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/zh-CN_blogs/about/"><i class="fa-fw fas fa-heart"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">线性代数：矩阵计算中的舍入误差与低精度</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2026-11-18T04:09:22.000Z" title="发表于 2026-11-17 22:09:22">2026-11-17</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2026-11-18T07:34:01.230Z" title="更新于 2026-11-18 01:34:01">2026-11-18</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/zh-CN_blogs/categories/%E6%95%B0%E5%AD%A6/">数学</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">浏览量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>把模型精度从 FP32 一路压到 FP8 甚至 FP4，能换来成倍的 Tensor Core 吞吐和显存带宽减负，但代价是每一步算术都在丢信息。一次低精度矩阵乘法 $\hat A \hat B$ 的误差包括两个部分：一个是输入量化成 $\hat A, \hat B$ 时的表示误差；第二个则是随着成千上万次乘加舍入，逐步滚大的累积误差。</p>
+<h2 id="浮点模型（Floating-Point-Model）"><a href="#浮点模型（Floating-Point-Model）" class="headerlink" title="浮点模型（Floating-Point Model）"></a>浮点模型（Floating-Point Model）</h2><p>在标准二进制浮点表示中，正规数写作 $x &#x3D; \pm (1.f)_2 \times 2^{e - \text{bias}}$。当基本运算 $\circ \in {+, -, \times, &#x2F;}$ 采用就近舍入且结果未溢出时，硬件给出的结果满足：</p>
+<p>$$\operatorname{fl}(a \circ b) &#x3D; (a \circ b)(1 + \delta), \qquad \lvert \delta \rvert \le u$$</p>
+<p>这里的单位舍入误差 $u &#x3D; 2^{-(t+1)}$ 完全由尾数(Mantissa)位数 $t$（不含隐含的 1）决定。一般的直觉是指数位管数值能跑多远（动态范围），尾数位管刻度能切多细（相对精度）。</p>
+<table>
+<thead>
+<tr>
+<th align="center">格式</th>
+<th align="center">指数位E</th>
+<th align="center">尾数位M</th>
+<th align="center">$u$</th>
+<th align="center">最大值（约）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">FP32</td>
+<td align="center">8</td>
+<td align="center">23</td>
+<td align="center">$2^{-24}$</td>
+<td align="center">$3.4 \times 10^{38}$</td>
+</tr>
+<tr>
+<td align="center">TF32</td>
+<td align="center">8</td>
+<td align="center">10</td>
+<td align="center">$2^{-11}$</td>
+<td align="center">$3.4 \times 10^{38}$</td>
+</tr>
+<tr>
+<td align="center">BF16</td>
+<td align="center">8</td>
+<td align="center">7</td>
+<td align="center">$2^{-8}$</td>
+<td align="center">$3.4 \times 10^{38}$</td>
+</tr>
+<tr>
+<td align="center">FP16</td>
+<td align="center">5</td>
+<td align="center">10</td>
+<td align="center">$2^{-11}$</td>
+<td align="center">$65504$</td>
+</tr>
+<tr>
+<td align="center">FP8 E4M3</td>
+<td align="center">4</td>
+<td align="center">3</td>
+<td align="center">$2^{-4}$</td>
+<td align="center">$448$</td>
+</tr>
+<tr>
+<td align="center">FP8 E5M2</td>
+<td align="center">5</td>
+<td align="center">2</td>
+<td align="center">$2^{-3}$</td>
+<td align="center">$57344$</td>
+</tr>
+<tr>
+<td align="center">FP4 E2M1</td>
+<td align="center">2</td>
+<td align="center">1</td>
+<td align="center">$2^{-2}$</td>
+<td align="center">$6$</td>
+</tr>
+</tbody></table>
+<p>从表里能直观看到设计取舍：BF16 保留了和 FP32 一样的 8 位指数，训练时不容易溢出，代价是尾数砍到只剩 7 位；到了 FP4 E2M1，单个未缩放元素最大只能表示 $6$，相邻刻度的相对误差高达 $25%$，离开外部缩放机制根本没法直接用。</p>
+<hr>
+<h2 id="输入量化（Input-Quantization）"><a href="#输入量化（Input-Quantization）" class="headerlink" title="输入量化（Input Quantization）"></a>输入量化（Input Quantization）</h2><p>低精度量化的头号天敌是 Transformer 激活值里常见的通道离群值（outliers）——少数几个极大值会强行撑大缩放因子，把同一组里的正常小值全部挤扁成零。现代低精度格式的技术演进，本质上就是围绕“缩小缩放粒度”和“提前打散尖峰”展开的：</p>
+<ul>
+<li><p><strong>缩小缩放粒度（Block Scaling）</strong>：既然整张量共用一个缩放因子（per-tensor）会被离群值一锅端，那就把张量切块各自缩放，把离群值的破坏力关进局部笼子里。DeepSeek-V3 在 FP8 训练中采用 <strong>1×128 激活分块 + 128×128 权重分块缩放</strong>；OCP 微缩放规范（MXFP8 &#x2F; MXFP4）则进一步切细到每 32 个元素共享一个 E8M0（2 的整数次幂）缩放因子。</p>
+</li>
+<li><p><strong>双级精细缩放（NVFP4）</strong>：到了 Blackwell 的 4-bit 时代，每元素只剩 E2M1 编码，32 元素的块依然嫌大。NVFP4 把一维块缩到 16 个元素，并将块级缩放因子升级为精度更高的 FP8 E4M3（允许取非 2 的幂次），外加一个张量级的 FP32 全局缩放因子：</p>
+<p>$$\hat{x}<em>i &#x3D; q_i \times s</em>{\mathrm{block}(i)} \times s_{\mathrm{global}}$$</p>
+<p>算下来每元素均摊 $4 + 8&#x2F;16 &#x3D; 4.5$ 位（另计全局因子与对齐开销）。即便如此，如果某个 16 元素块里恰好撞上极端离群值，同块里的小值依然难逃被舍入成零的命运。</p>
+</li>
+<li><p><strong>量化前正交旋转（Hadamard 旋转）</strong>：既然缩放粒度已经压到极限，那就从源头消除尖峰。以 QuaRot 为代表的方法在量化前插入一对正交矩阵 $H$（满足 $H H^\top &#x3D; I$），把恒等变换改写为 $XW &#x3D; (XH)(H^\top W)$。正交旋转不改变内积结果，却能把集中在少数通道上的能量均匀摊平到所有坐标上，大幅减轻离群值对低比特量化的冲击。</p>
+</li>
+</ul>
+<hr>
+<h2 id="点积中的舍入误差"><a href="#点积中的舍入误差" class="headerlink" title="点积中的舍入误差"></a>点积中的舍入误差</h2><p>就算输入已经完美量化，大模型的隐藏层维度动辄几千上万，把这么长的乘积序列累加起来本身就是一场误差累积战：</p>
+<ul>
+<li><p><strong>顺序累加的线性漂移</strong>：严格按从左到右顺序累加 $n$ 项内积时，最坏情况下的舍入误差界随维度 $n$ 近似线性增长：</p>
+<p>$$\lvert \operatorname{fl}(x^\top y) - x^\top y \rvert \le \gamma_n, \lvert x \rvert^\top \lvert y \rvert, \qquad \gamma_n &#x3D; \frac{nu}{1 - nu} \quad (nu &lt; 1)$$</p>
+</li>
+<li><p><strong>大数吃小数（Swamping）</strong>：这是顺序累加在低精度下最致命的故障模式。在 $a + b$ 中，一旦累加和 $a$ 滚雪球变得足够大，而新进来的乘积 $\lvert b \rvert$ 小于 $a$ 附近相邻浮点数间距的一半，硬件加法器算出的结果就原封不动等于 $a$——后面所有的有效小信号全被无声吞没。</p>
+</li>
+<li><p><strong>算法层面的止损</strong>：**两两配对求和（Pairwise Summation）**把串联加法改成二叉树归约，误差系数从 $\gamma_n$ 骤降至 $\gamma_{\lceil \log_2 n \rceil}$；<strong>Kahan 补偿求和</strong>则额外维护一个低位补偿变量，把每次舍入丢掉的尾巴攒起来补进下一轮。</p>
+</li>
+<li><p><strong>硬件层面的两级累加</strong>：GPU Tensor Core 内部为了省面积，低精度乘加器往往不会全程用全精度。DeepSeek-V3 在 Hopper 上做 FP8 矩阵乘时，每累加一定步长就把 Tensor Core 里的部分和搬到 CUDA Core 用 FP32 汇总，阻断低精度累加器的精度退化（当然，输入量化阶段已经丢掉的信息不可能靠这一步变回来）。</p>
+</li>
+</ul>
+<hr>
+<h2 id="条件数与稳定性"><a href="#条件数与稳定性" class="headerlink" title="条件数与稳定性"></a>条件数与稳定性</h2><p>把上面所有的量化噪点和舍入误差打包起来，从数值线性代数的视角看，等效于我们在精确问题上施加了一个微小的相对扰动 $\lVert \Delta A \rVert &#x2F; \lVert A \rVert &#x3D; O(u)$——即所谓<strong>后向稳定性（Backward Stability）</strong>：算出的 $\hat{x}$ 其实是某个邻近问题 $(A + \Delta A)\hat{x} &#x3D; b$ 的精确解。</p>
+<p>但这并不保证最终结果 $\hat{x}$ 离真解 $x$ 很近，中间还隔着**条件数（Condition Number）**这根放大杠杆：</p>
+<p>$$\kappa(A) &#x3D; \lVert A \rVert_2 \lVert A^{-1} \rVert_2 &#x3D; \frac{\sigma_{\max}}{\sigma_{\min}}, \qquad \frac{\lVert \hat{x} - x \rVert}{\lVert x \rVert} \lesssim \kappa(A) \cdot \frac{\lVert \Delta A \rVert}{\lVert A \rVert}$$</p>
+<p>当矩阵奇异值跨度极大（病态，ill-conditioned）时，哪怕输入端只有微不足道的舍入扰动，输出误差也会被 $\kappa(A)$ 成倍放大。例如取 $A &#x3D; \operatorname{diag}(1, 10^{-4})$、$b &#x3D; (1, 0)^\top$，只需在 $b$ 的第二项加上一个 $10^{-4}$ 的微扰，解的第二项就会从 $0$ 剧烈跳变到 $1$。</p>
+<p>还有一个常见的八股是<strong>消去误差（Catastrophic Cancellation）</strong>：两个几乎相等的浮点数相减，高位有效数字全部抵消，留下的全是低位舍入噪声。遇到类似 $\sqrt{x+1} - \sqrt{x}$ 的表达式，必须做代数改写（如 $1 &#x2F; (\sqrt{x+1} + \sqrt{x})$）绕开直接相减。</p>
+<hr>
+<h2 id="小实验"><a href="#小实验" class="headerlink" title="小实验"></a>小实验</h2><p><strong>同一个点积，分别观察输入和累加误差。</strong> 先用 FP16 舍入输入，在高精度下计算乘积；再对同一批乘积分别用 FP16 和 FP32 顺序累加，每步模拟硬件舍入。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> math <span class="keyword">import</span> fsum</span><br><span class="line"><span class="keyword">from</span> random <span class="keyword">import</span> Random</span><br><span class="line"><span class="keyword">from</span> struct <span class="keyword">import</span> pack, unpack</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">rounded</span>(<span class="params">x, fmt</span>):</span><br><span class="line">    <span class="keyword">return</span> unpack(fmt, pack(fmt, x))[<span class="number">0</span>]  <span class="comment"># e: FP16, f: FP32</span></span><br><span class="line"></span><br><span class="line">rng = Random(<span class="number">42</span>)</span><br><span class="line">pairs = [(rng.random(), rng.random()) <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">16384</span>)]</span><br><span class="line">reference = fsum(a * b <span class="keyword">for</span> a, b <span class="keyword">in</span> pairs)</span><br><span class="line">products = [rounded(a, <span class="string">&quot;e&quot;</span>) * rounded(b, <span class="string">&quot;e&quot;</span>) <span class="keyword">for</span> a, b <span class="keyword">in</span> pairs]</span><br><span class="line">quantized = fsum(products)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;input quantization:&quot;</span>, <span class="built_in">abs</span>(quantized - reference) / <span class="built_in">abs</span>(reference))</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> label, fmt <span class="keyword">in</span> [(<span class="string">&quot;FP16&quot;</span>, <span class="string">&quot;e&quot;</span>), (<span class="string">&quot;FP32&quot;</span>, <span class="string">&quot;f&quot;</span>)]:</span><br><span class="line">    total = <span class="number">0.0</span></span><br><span class="line">    <span class="keyword">for</span> p <span class="keyword">in</span> products:</span><br><span class="line">        total = rounded(total + p, fmt)</span><br><span class="line">    <span class="built_in">print</span>(label, <span class="string">&quot;accumulation:&quot;</span>, <span class="built_in">abs</span>(total - quantized) / <span class="built_in">abs</span>(quantized))</span><br></pre></td></tr></table></figure>
+
+<p>跑下来会发现 FP16 顺序累加的相对误差接近 50%。如果部分和超过 $2048$，后面进来的小乘积在加法器里直接被吃光。</p>
+<p><strong>同一输入，用 FP8 比较整张量缩放、分块缩放和 Hadamard 旋转。</strong> 在 FP32 下测反量化后的相对误差。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> torch</span><br><span class="line"><span class="keyword">from</span> scipy.linalg <span class="keyword">import</span> hadamard</span><br><span class="line"></span><br><span class="line">torch.manual_seed(<span class="number">42</span>)</span><br><span class="line">d = <span class="number">128</span></span><br><span class="line">x = torch.randn(<span class="number">1</span>, d)</span><br><span class="line">x[<span class="number">0</span>, <span class="number">0</span>] = <span class="number">50.0</span>  <span class="comment"># 制造典型 Transformer 通道离群值</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">quant_fp8_sim</span>(<span class="params">t</span>):</span><br><span class="line">    scale = t.<span class="built_in">abs</span>().amax(dim=-<span class="number">1</span>, keepdim=<span class="literal">True</span>) / <span class="number">448.0</span></span><br><span class="line">    <span class="keyword">return</span> (t / scale).to(torch.float8_e4m3fn).<span class="built_in">float</span>() * scale</span><br><span class="line"></span><br><span class="line">H = torch.tensor(hadamard(d) / (d ** <span class="number">0.5</span>), dtype=torch.float32)</span><br><span class="line">err_raw = (x - quant_fp8_sim(x)).norm() / x.norm()</span><br><span class="line">err_block = (x - quant_fp8_sim(x.reshape(-<span class="number">1</span>, <span class="number">16</span>)).reshape_as(x)).norm() / x.norm()</span><br><span class="line">err_rot = (x - quant_fp8_sim(x @ H) @ H.T).norm() / x.norm()</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;Tensor: <span class="subst">&#123;err_raw:<span class="number">.4</span>f&#125;</span> | Block: <span class="subst">&#123;err_block:<span class="number">.4</span>f&#125;</span> | Rotated: <span class="subst">&#123;err_rot:<span class="number">.4</span>f&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="参考与延伸阅读"><a href="#参考与延伸阅读" class="headerlink" title="参考与延伸阅读"></a>参考与延伸阅读</h2><ol>
+<li>Nick Higham 的博客：<a target="_blank" rel="noopener" href="https://nhigham.com/2020/03/19/what-is-a-condition-number/">What Is a Condition Number?</a></li>
+<li>NVIDIA 文档：<a target="_blank" rel="noopener" href="https://docs.nvidia.com/deeplearning/performance/mixed-precision-training/index.html">Train With Mixed Precision</a>，讲训练中如何搭配低精度和 FP32。</li>
+<li>NVIDIA 技术博客：<a target="_blank" rel="noopener" href="https://developer.nvidia.cn/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/">NVFP4 推理入门</a>。训练里的二维权重缩放和随机 Hadamard 变换见 <a target="_blank" rel="noopener" href="https://docs.nvidia.com/deeplearning/transformer-engine/features/low_precision_training/nvfp4/nvfp4.html">Transformer Engine 文档</a>。</li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2412.19437">DeepSeek-V3 Technical Report</a>，见第 3.3 节的 FP8 训练、分块缩放和累加策略。</li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2404.00456">QuaRot</a>，用旋转减轻离群值对 4 位推理量化的影响。</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://dt1dr.github.io/zh-CN_blogs">dt1dr</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://dt1dr.github.io/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%95%B0%E5%80%BC%E7%B2%BE%E5%BA%A6/">https://dt1dr.github.io/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%95%B0%E5%80%BC%E7%B2%BE%E5%BA%A6/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://dt1dr.github.io/zh-CN_blogs" target="_blank">Dfexsite</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/zh-CN_blogs/tags/Linear-Algebra/">Linear Algebra</a><a class="post-meta__tags" href="/zh-CN_blogs/tags/Mixed-Precision/">Mixed Precision</a></div><div class="post-share"><div class="social-share" data-image="/zh-CN_blogs/img/LACover.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%9E%81%E5%88%86%E8%A7%A3%E4%B8%8E-Muon/" title="线性代数：极分解与 Muon"><img class="cover" src="/zh-CN_blogs/img/LACover.png" onerror="onerror=null;src='/zh-CN_blogs/img/404.jpg'" alt="cover of previous post"><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">线性代数：极分解与 Muon</div></div><div class="info-2"><div class="info-item-1">前言神经网络训练时，线性层的梯度矩阵 $G$ 往往极度病态：少数几个主奇异方向上的梯度大得惊人，其余绝大多数方向几乎纹丝不动。如果某一步的更新矩阵是 $G &#x3D; \operatorname{diag}(100, 1)$，两个正交方向的步长整整差了 100 倍。如果我们把 $G$ 替换成它的极因子 $I$——保留奇异向量方向，把所有非零奇异值一律拉平为 $1$——各个有效方向就能齐头并进。这正是优化器 Muon 的核心直觉：...</div></div></div></a><a class="pagination-related" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E5%88%86%E5%9D%97%E7%9F%A9%E9%98%B5%E4%B9%98%E6%B3%95/" title="线性代数：分块矩阵乘法"><img class="cover" src="/zh-CN_blogs/img/LACover.png" onerror="onerror=null;src='/zh-CN_blogs/img/404.jpg'" alt="cover of next post"><div class="info text-right"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">线性代数：分块矩阵乘法</div></div><div class="info-2"><div class="info-item-1">前言在理论和高层级api调用者眼里，矩阵乘法是一次性完成的一个整体映射；但在 GPU 底层和多卡集群里，完整的大矩阵很大可能是片上 SRAM 装不下，卡间互联又传不起。系统工程师眼里的矩阵乘法需要把大矩阵切碎、搬运、在局部算完后再拼回去。 分块矩阵乘法（Block Matrix Multiplication）只要切分边界对齐（$A$ 的列切分与 $B$ 的行切分一致），把 $p \times q$ 块的 $A$ 与 $q \tim...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E5%88%86%E5%9D%97%E7%9F%A9%E9%98%B5%E4%B9%98%E6%B3%95/" title="线性代数：分块矩阵乘法"><img class="cover" src="/zh-CN_blogs/img/LACover.png" alt="cover"><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-11-17</div><div class="info-item-2">线性代数：分块矩阵乘法</div></div><div class="info-2"><div class="info-item-1">前言在理论和高层级api调用者眼里，矩阵乘法是一次性完成的一个整体映射；但在 GPU 底层和多卡集群里，完整的大矩阵很大可能是片上 SRAM 装不下，卡间互联又传不起。系统工程师眼里的矩阵乘法需要把大矩阵切碎、搬运、在局部算完后再拼回去。 分块矩阵乘法（Block Matrix Multiplication）只要切分边界对齐（$A$ 的列切分与 $B$ 的行切分一致），把 $p \times q$ 块的 $A$ 与 $q \tim...</div></div></div></a><a class="pagination-related" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%9E%81%E5%88%86%E8%A7%A3%E4%B8%8E-Muon/" title="线性代数：极分解与 Muon"><img class="cover" src="/zh-CN_blogs/img/LACover.png" alt="cover"><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-11-17</div><div class="info-item-2">线性代数：极分解与 Muon</div></div><div class="info-2"><div class="info-item-1">前言神经网络训练时，线性层的梯度矩阵 $G$ 往往极度病态：少数几个主奇异方向上的梯度大得惊人，其余绝大多数方向几乎纹丝不动。如果某一步的更新矩阵是 $G &#x3D; \operatorname{diag}(100, 1)$，两个正交方向的步长整整差了 100 倍。如果我们把 $G$ 替换成它的极因子 $I$——保留奇异向量方向，把所有非零奇异值一律拉平为 $1$——各个有效方向就能齐头并进。这正是优化器 Muon 的核心直觉：...</div></div></div></a><a class="pagination-related" href="/zh-CN_blogs/2023/11/01/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E5%90%91%E9%87%8F%E7%A9%BA%E9%97%B4/" title="线性代数：向量空间"><img class="cover" src="/zh-CN_blogs/img/LACover.png" alt="cover"><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2023-11-01</div><div class="info-item-2">线性代数：向量空间</div></div><div class="info-2"><div class="info-item-1">前言2023年下半年的我可以说是“在与线性代数的搏斗中死去了”，学校开了两门线性代数，一门用的课本是Linear Algebra and its Applications, 6th edition, by D. Lay, S. Lay, and J. McDonald， 另一本则是Linear Algebra Done Right. 代数结构初探：群，环，域这部分记得比较基础，感兴趣请自行移步离散数学&#x2F;抽象代数。 群 G...</div></div></div></a><a class="pagination-related" href="/zh-CN_blogs/2023/11/12/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E5%86%85%E7%A7%AF%E7%A9%BA%E9%97%B4/" title="线性代数：内积空间"><img class="cover" src="/zh-CN_blogs/img/LACover.png" alt="cover"><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2023-11-12</div><div class="info-item-2">线性代数：内积空间</div></div><div class="info-2"><div class="info-item-1">前言中学前我们就学过$\mathbb{R}^n$中的向量点积$$ \mathbf{u\cdot v} &#x3D; \mathbf{u}^T\mathbf{v} &#x3D; \sum^{n}_{i&#x3D;1}u_iv_i\text{,}(u_i, v_i\in \mathbb{R}) $$ 通过点积能够定义距离，长度，夹角等几何概念$$ cos\theta &#x3D; \frac{\mathbf{u\cdot v}}{|\...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/zh-CN_blogs/img/avatar.jpg" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">dt1dr</div><div class="author-info-description">计算机科学专业，ML Infra爱好者，数学门外汉</div><div class="site-data"><a href="/zh-CN_blogs/archives/"><div class="headline">文章</div><div class="length-num">17</div></a><a href="/zh-CN_blogs/tags/"><div class="headline">标签</div><div class="length-num">19</div></a><a href="/zh-CN_blogs/categories/"><div class="headline">分类</div><div class="length-num">6</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/dt1dr"><i class="fab fa-github"></i><span>Follow Me</span></a></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%89%8D%E8%A8%80"><span class="toc-number">1.</span> <span class="toc-text">前言</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%B5%AE%E7%82%B9%E6%A8%A1%E5%9E%8B%EF%BC%88Floating-Point-Model%EF%BC%89"><span class="toc-number">2.</span> <span class="toc-text">浮点模型（Floating-Point Model）</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%BE%93%E5%85%A5%E9%87%8F%E5%8C%96%EF%BC%88Input-Quantization%EF%BC%89"><span class="toc-number">3.</span> <span class="toc-text">输入量化（Input Quantization）</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%82%B9%E7%A7%AF%E4%B8%AD%E7%9A%84%E8%88%8D%E5%85%A5%E8%AF%AF%E5%B7%AE"><span class="toc-number">4.</span> <span class="toc-text">点积中的舍入误差</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%9D%A1%E4%BB%B6%E6%95%B0%E4%B8%8E%E7%A8%B3%E5%AE%9A%E6%80%A7"><span class="toc-number">5.</span> <span class="toc-text">条件数与稳定性</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%B0%8F%E5%AE%9E%E9%AA%8C"><span class="toc-number">6.</span> <span class="toc-text">小实验</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%8F%82%E8%80%83%E4%B8%8E%E5%BB%B6%E4%BC%B8%E9%98%85%E8%AF%BB"><span class="toc-number">7.</span> <span class="toc-text">参考与延伸阅读</span></a></li></ol></div></div><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>系列文章</span></div><div class="aside-list"><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%95%B0%E5%80%BC%E7%B2%BE%E5%BA%A6/" title="线性代数：矩阵计算中的舍入误差与低精度">线性代数：矩阵计算中的舍入误差与低精度</a><time datetime="2026-11-18T04:09:22.000Z" title="发表于 2026-11-17 22:09:22">2026-11-17</time></div></div><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%9E%81%E5%88%86%E8%A7%A3%E4%B8%8E-Muon/" title="线性代数：极分解与 Muon">线性代数：极分解与 Muon</a><time datetime="2026-11-18T04:09:22.000Z" title="发表于 2026-11-17 22:09:22">2026-11-17</time></div></div><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E5%88%86%E5%9D%97%E7%9F%A9%E9%98%B5%E4%B9%98%E6%B3%95/" title="线性代数：分块矩阵乘法">线性代数：分块矩阵乘法</a><time datetime="2026-11-18T04:09:21.000Z" title="发表于 2026-11-17 22:09:21">2026-11-17</time></div></div><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2023/11/12/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E5%86%85%E7%A7%AF%E7%A9%BA%E9%97%B4/" title="线性代数：内积空间">线性代数：内积空间</a><time datetime="2023-11-13T04:13:22.000Z" title="发表于 2023-11-12 22:13:22">2023-11-12</time></div></div><div class="aside-list-item"><div class="content"><a class="title" href="/zh-CN_blogs/2023/11/01/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E5%90%91%E9%87%8F%E7%A9%BA%E9%97%B4/" title="线性代数：向量空间">线性代数：向量空间</a><time datetime="2023-11-01T05:10:47.000Z" title="发表于 2023-11-01 00:10:47">2023-11-01</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%95%B0%E5%80%BC%E7%B2%BE%E5%BA%A6/" title="线性代数：矩阵计算中的舍入误差与低精度"><img src="/zh-CN_blogs/img/LACover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="线性代数：矩阵计算中的舍入误差与低精度"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%95%B0%E5%80%BC%E7%B2%BE%E5%BA%A6/" title="线性代数：矩阵计算中的舍入误差与低精度">线性代数：矩阵计算中的舍入误差与低精度</a><time datetime="2026-11-18T04:09:22.000Z" title="发表于 2026-11-17 22:09:22">2026-11-17</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%9E%81%E5%88%86%E8%A7%A3%E4%B8%8E-Muon/" title="线性代数：极分解与 Muon"><img src="/zh-CN_blogs/img/LACover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="线性代数：极分解与 Muon"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E6%9E%81%E5%88%86%E8%A7%A3%E4%B8%8E-Muon/" title="线性代数：极分解与 Muon">线性代数：极分解与 Muon</a><time datetime="2026-11-18T04:09:22.000Z" title="发表于 2026-11-17 22:09:22">2026-11-17</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E5%88%86%E5%9D%97%E7%9F%A9%E9%98%B5%E4%B9%98%E6%B3%95/" title="线性代数：分块矩阵乘法"><img src="/zh-CN_blogs/img/LACover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="线性代数：分块矩阵乘法"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/11/17/%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0%EF%BC%9A%E5%88%86%E5%9D%97%E7%9F%A9%E9%98%B5%E4%B9%98%E6%B3%95/" title="线性代数：分块矩阵乘法">线性代数：分块矩阵乘法</a><time datetime="2026-11-18T04:09:21.000Z" title="发表于 2026-11-17 22:09:21">2026-11-17</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-2/" title="开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent">开发环境和包管理：锁文件之外的现实——CUDA、HPC 与 Agent</a><time datetime="2026-10-15T04:50:46.000Z" title="发表于 2026-10-14 23:50:46">2026-10-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战"><img src="/zh-CN_blogs/img/DevOpsCover.png" onerror="this.onerror=null;this.src='/zh-CN_blogs/img/404.jpg'" alt="开发环境和包管理：macOS / Linux 跨平台实战"/></a><div class="content"><a class="title" href="/zh-CN_blogs/2026/10/14/package2026-1/" title="开发环境和包管理：macOS / Linux 跨平台实战">开发环境和包管理：macOS / Linux 跨平台实战</a><time datetime="2026-10-14T19:50:06.000Z" title="发表于 2026-10-14 14:50:06">2026-10-14</time></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2020 - 2026 By dt1dr</span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/zh-CN_blogs/js/utils.js"></script><script src="/zh-CN_blogs/js/main.js"></script><div class="js-pjax"><script>(() => {
+  const changeScriptToMath = article => {
+    article.querySelectorAll('script[type^="math/tex"]').forEach(el => {
+      const display = /mode=display/.test(el.type)
+      const node = document.createElement(display ? 'div' : 'span')
+      node.textContent = display
+        ? `$$${el.textContent}$$`
+        : `$${el.textContent}$`
+      el.parentNode.replaceChild(node, el)
+    })
+  }
+
+  const loadMathjax = () => {
+    const article = document.getElementById('article-container')
+    if (!article || article.querySelector('.hbe-container')) return
+    changeScriptToMath(article)
+
+    if (!window.MathJax) {
+      window.MathJax = {
+        loader: {
+          load: [
+            // Four font extension packages (optional)
+            //- '[tex]/bbm',
+            //- '[tex]/bboldx',
+            //- '[tex]/dsfont',
+            '[tex]/mhchem',
+            'ui/lazy'
+          ],
+          paths: {
+            'mathjax-newcm': '[mathjax]/../@mathjax/mathjax-newcm-font',
+
+            //- // Four font extension packages (optional)
+            //- 'mathjax-bbm-extension': '[mathjax]/../@mathjax/mathjax-bbm-font-extension',
+            //- 'mathjax-bboldx-extension': '[mathjax]/../@mathjax/mathjax-bboldx-font-extension',
+            //- 'mathjax-dsfont-extension': '[mathjax]/../@mathjax/mathjax-dsfont-font-extension',
+            'mathjax-mhchem-extension': '[mathjax]/../@mathjax/mathjax-mhchem-font-extension'
+          }
+        },
+        output: {
+          font: 'mathjax-newcm',
+        },
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          tags: 'none',
+          packages: {
+            '[+]': [
+              'mhchem'
+            ]
+          }
+        },
+        chtml: {
+          scale: 1.1
+        },
+        options: {
+          lazyMargin: '200px',
+          enableMenu: true,
+          menuOptions: {
+            settings: {
+              enrich: false  // Turn off Braille and voice narration text automatic generation
+            }
+          },
+        }
+      }
+
+      const script = document.createElement('script')
+      script.src = 'https://cdn.jsdelivr.net/npm/mathjax/tex-mml-chtml.min.js'
+      script.id = 'MathJax-script'
+      script.async = true
+      document.head.appendChild(script)
+    } else {
+      MathJax.typesetClear()
+      MathJax.typesetPromise([ article ])
+    }
+  }
+
+  btf.addGlobalFn('encrypt', loadMathjax, 'mathjax')
+  if (window.pjax) loadMathjax()
+  else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadMathjax)
+  else loadMathjax()
+})()</script><script>(() => {
+  const parseViewBox = viewBox => {
+    if (!viewBox) return null
+    const parts = viewBox.trim().split(/[\s,]+/).map(n => Number(n))
+    if (parts.length !== 4 || parts.some(n => Number.isNaN(n))) return null
+    return parts
+  }
+
+  const getSvgViewBox = svg => {
+    const attr = parseViewBox(svg.getAttribute('viewBox'))
+    if (attr) return attr
+
+    // Fallback: use bbox to build a viewBox
+    try {
+      const bbox = svg.getBBox()
+      if (bbox && bbox.width && bbox.height) return [bbox.x, bbox.y, bbox.width, bbox.height]
+    } catch (e) {
+      // getBBox may fail on some edge cases; ignore
+    }
+
+    const w = Number(svg.getAttribute('width')) || 0
+    const h = Number(svg.getAttribute('height')) || 0
+    if (w > 0 && h > 0) return [0, 0, w, h]
+    return [0, 0, 100, 100]
+  }
+
+  const setSvgViewBox = (svg, vb) => {
+    svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2]} ${vb[3]}`)
+  }
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v))
+
+  const openSvgInNewTab = ({ source, initViewBox }) => {
+    const getClonedSvg = () => {
+      if (typeof source === 'string') {
+        const template = document.createElement('template')
+        template.innerHTML = source.trim()
+        const svg = template.content.querySelector('svg')
+        return svg ? svg.cloneNode(true) : null
+      }
+      if (source && typeof source.cloneNode === 'function') {
+        return source.cloneNode(true)
+      }
+      return null
+    }
+
+    const clone = getClonedSvg()
+    if (!clone) return
+    if (initViewBox && initViewBox.length === 4) {
+      clone.setAttribute('viewBox', initViewBox.join(' '))
+    }
+    if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    if (!clone.getAttribute('xmlns:xlink') && clone.innerHTML.includes('xlink:')) {
+      clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+    }
+    // inject background to match current theme
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    const bg = getComputedStyle(document.body).backgroundColor || (isDark ? '#1e1e1e' : '#ffffff')
+    if (!clone.style.background) clone.style.background = bg
+
+    const serializer = new XMLSerializer()
+    const svgSource = serializer.serializeToString(clone)
+    const htmlSource = `<!doctype html><html><head><meta charset="utf-8" />
+      <style>
+        html, body { width: 100%; height: 100%; margin: 0; display: flex; align-items: center; justify-content: center; background: ${bg}; }
+        svg { max-width: 100%; max-height: 100%; height: auto; width: auto; }
+      </style>
+      </head><body>${svgSource}</body></html>`
+    const blob = new Blob([htmlSource], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener')
+
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+
+  const attachMermaidViewerButton = wrap => {
+    let btn = wrap.querySelector('.mermaid-open-btn')
+    if (!btn) {
+      btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'mermaid-open-btn'
+      wrap.appendChild(btn)
+    }
+
+    btn.innerHTML = '<i class="fa fa-search fa-fw" aria-hidden="true"></i>'
+
+    if (!btn.__mermaidViewerBound) {
+      btn.addEventListener('click', e => {
+        e.preventDefault()
+        e.stopPropagation()
+        const svg = wrap.__mermaidOriginalSvg || wrap.querySelector('svg')
+        if (!svg) return
+        const initViewBox = wrap.__mermaidInitViewBox
+        openSvgInNewTab({ source: svg, initViewBox })
+      })
+      btn.__mermaidViewerBound = true
+    }
+  }
+
+  // Zoom around a point (px, py) in the SVG viewport (in viewBox coordinates)
+  const zoomAtPoint = (vb, factor, px, py) => {
+    const w = vb[2] * factor
+    const h = vb[3] * factor
+    const nx = px - (px - vb[0]) * factor
+    const ny = py - (py - vb[1]) * factor
+    return [nx, ny, w, h]
+  }
+
+  const initMermaidGestures = wrap => {
+    // Clean up previous event listeners and pending frames
+    if (wrap.__mermaidAbortController) {
+      wrap.__mermaidAbortController.abort()
+      if (wrap.__mermaidRafId) cancelAnimationFrame(wrap.__mermaidRafId)
+    }
+    const ac = new AbortController()
+    wrap.__mermaidAbortController = ac
+    const svg = wrap.querySelector('svg')
+    if (!svg) return
+
+    // Ensure viewBox exists so gestures always work
+    const initVb = getSvgViewBox(svg)
+    wrap.__mermaidInitViewBox = initVb
+    wrap.__mermaidCurViewBox = initVb.slice()
+    setSvgViewBox(svg, initVb)
+    // Disable default gestures to prevent scroll chaining and pinch-zoom penetration in Chrome
+    svg.style.touchAction = 'none'
+
+    // Cache BoundingClientRect, throttled on scroll to reduce reflow
+    let cachedRect = svg.getBoundingClientRect()
+    let rectDirty = false
+    const markRectDirty = () => { rectDirty = true }
+    window.addEventListener('resize', markRectDirty, { signal: ac.signal })
+    window.addEventListener('scroll', markRectDirty, { signal: ac.signal, capture: true })
+    const getRect = () => {
+      if (rectDirty) {
+        cachedRect = svg.getBoundingClientRect()
+        rectDirty = false
+      }
+      return cachedRect
+    }
+
+    // Precompute clamp bounds from initial viewBox
+    const minW = initVb[2] * 0.1
+    const maxW = initVb[2] * 10
+    const minH = initVb[3] * 0.1
+    const maxH = initVb[3] * 10
+    const clampVb = vb => {
+      const out = vb.slice()
+      out[2] = clamp(out[2], minW, maxW)
+      out[3] = clamp(out[3], minH, maxH)
+      return out
+    }
+
+    // Throttle DOM updates using requestAnimationFrame
+    let pendingVb = null
+    let rafId = null
+    const applyVb = () => {
+      if (pendingVb) {
+        wrap.__mermaidCurViewBox = pendingVb
+        setSvgViewBox(svg, pendingVb)
+        pendingVb = null
+      }
+      rafId = null
+      wrap.__mermaidRafId = null
+    }
+    const setCurVb = vb => {
+      pendingVb = clampVb(vb)
+      if (!rafId) {
+        rafId = requestAnimationFrame(applyVb)
+        wrap.__mermaidRafId = rafId
+      }
+    }
+
+    const state = {
+      pointers: new Map(),
+      startVb: null,
+      startDist: 0,
+      lastPointerX: 0,
+      lastPointerY: 0
+    }
+
+    const onPointerDown = e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      svg.setPointerCapture(e.pointerId)
+      const curVb = wrap.__mermaidCurViewBox
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (state.pointers.size === 1) {
+        state.startVb = curVb.slice()
+        state.lastPointerX = e.clientX
+        state.lastPointerY = e.clientY
+      } else if (state.pointers.size === 2) {
+        const pts = [...state.pointers.values()]
+        const dx = pts[0].x - pts[1].x
+        const dy = pts[0].y - pts[1].y
+        state.startDist = Math.hypot(dx, dy)
+        state.startVb = curVb.slice()
+      }
+    }
+
+    const onPointerMove = e => {
+      if (!state.pointers.has(e.pointerId)) return
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      const curVb = wrap.__mermaidCurViewBox
+      const rect = getRect()
+      if (state.pointers.size === 1 && state.startVb) {
+        const p = state.pointers.values().next().value
+        const dxClient = p.x - state.lastPointerX
+        const dyClient = p.y - state.lastPointerY
+        state.lastPointerX = p.x
+        state.lastPointerY = p.y
+        const dx = dxClient * (curVb[2] / rect.width)
+        const dy = dyClient * (curVb[3] / rect.height)
+        setCurVb([curVb[0] - dx, curVb[1] - dy, curVb[2], curVb[3]])
+        return
+      }
+      if (state.pointers.size === 2 && state.startVb && state.startDist > 0) {
+        const pts = [...state.pointers.values()]
+        const dx = pts[0].x - pts[1].x
+        const dy = pts[0].y - pts[1].y
+        const dist = Math.hypot(dx, dy)
+        if (!dist) return
+        const factor = state.startDist / dist
+        const cx = (pts[0].x + pts[1].x) / 2
+        const cy = (pts[0].y + pts[1].y) / 2
+        const px = curVb[0] + (cx - rect.left) * (curVb[2] / rect.width)
+        const py = curVb[1] + (cy - rect.top) * (curVb[3] / rect.height)
+        setCurVb(zoomAtPoint(state.startVb, factor, px, py))
+      }
+    }
+
+    const onPointerUpOrCancel = e => {
+      // Release PointerCapture to avoid event capture anomalies
+      if (svg.hasPointerCapture && svg.hasPointerCapture(e.pointerId)) {
+        svg.releasePointerCapture(e.pointerId)
+      }
+      state.pointers.delete(e.pointerId)
+      if (state.pointers.size === 0) {
+        state.startVb = null
+        state.startDist = 0
+      } else if (state.pointers.size === 1) {
+        const p = state.pointers.values().next().value
+        state.lastPointerX = p.x
+        state.lastPointerY = p.y
+      }
+    }
+
+    const onWheel = e => {
+      // Prevent event bubbling from triggering external scroll
+      e.preventDefault()
+      e.stopPropagation()
+      // Normalize deltaY across deltaMode (Chrome uses pixels, Safari uses lines)
+      let delta = e.deltaY
+      if (e.deltaMode === 1) delta *= 16
+      else if (e.deltaMode === 2) delta *= 400
+
+      // Continuous zoom factor: smoother than fixed 1.1/0.9 steps
+      const zoomFactor = Math.pow(1.001, delta)
+
+      const curVb = wrap.__mermaidCurViewBox
+      const rect = getRect()
+      const px = curVb[0] + (e.clientX - rect.left) * (curVb[2] / rect.width)
+      const py = curVb[1] + (e.clientY - rect.top) * (curVb[3] / rect.height)
+      setCurVb(zoomAtPoint(curVb, zoomFactor, px, py))
+    }
+
+    const onDblClick = () => {
+      const init = wrap.__mermaidInitViewBox
+      if (init) setCurVb(init)
+    }
+
+    svg.addEventListener('pointerdown', onPointerDown, { signal: ac.signal })
+    svg.addEventListener('pointermove', onPointerMove, { signal: ac.signal })
+    svg.addEventListener('pointerup', onPointerUpOrCancel, { signal: ac.signal })
+    svg.addEventListener('pointercancel', onPointerUpOrCancel, { signal: ac.signal })
+    svg.addEventListener('wheel', onWheel, { passive: false, signal: ac.signal })
+    svg.addEventListener('dblclick', onDblClick, { signal: ac.signal })
+  }
+
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      // Clean up event listeners and stale content before re-rendering
+      if (item.__mermaidAbortController) {
+        item.__mermaidAbortController.abort()
+      }
+      const oldSvg = item.querySelector('svg')
+      if (oldSvg) oldSvg.remove()
+      const oldError = item.querySelector('.mermaid-error')
+      if (oldError) oldError.remove()
+      let config = {}
+      try {
+        config = mermaidSrc.dataset.config ? JSON.parse(mermaidSrc.dataset.config) : {}
+      } catch (e) {
+        console.warn('[mermaid] failed to parse dataset.config:', e)
+      }
+      if (!config.theme) {
+        config.theme = theme
+      }
+      const mermaidThemeConfig = `%%{init: ${JSON.stringify(config)}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+        if (false) initMermaidGestures(item)
+        item.__mermaidOriginalSvg = svg
+        if (true) attachMermaidViewerButton(item)
+      }
+
+      const handleError = err => {
+        console.error(`[mermaid] render failed for block #${index}:`, err)
+        const errorEl = document.createElement('div')
+        errorEl.className = 'mermaid-error'
+        errorEl.textContent = `Mermaid render error: ${err.message || err}`
+        mermaidSrc.insertAdjacentElement('afterend', errorEl)
+      }
+
+      try {
+        const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+        // mermaid v9 and v10 compatibility
+        if (typeof renderFn === 'string') {
+          renderMermaid(renderFn)
+        } else {
+          renderFn.then(({ svg }) => renderMermaid(svg)).catch(handleError)
+        }
+      } catch (err) {
+        handleError(err)
+      }
+    })
+  }
+
+  const codeToMermaid = $article => {
+    const codeMermaidEle = $article.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    const $article = document.getElementById('article-container')
+    if (!$article) return
+
+    if (true) codeToMermaid($article)
+    const $mermaid = $article.querySelectorAll('.mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章" type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/zh-CN_blogs/js/search/local-search.js"></script></div></div></body></html>
