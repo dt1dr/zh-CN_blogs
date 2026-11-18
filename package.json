@@ -6,6 +6,8 @@
     "build": "hexo generate",
     "clean": "hexo clean",
     "deploy": "hexo deploy",
+    "format:md": "prettier --write \"{README.md,source/**/*.md,scaffolds/**/*.md}\"",
+    "format:md:check": "prettier --check \"{README.md,source/**/*.md,scaffolds/**/*.md}\"",
     "server": "hexo server"
   },
   "hexo": {
@@ -24,6 +26,10 @@
     "hexo-renderer-stylus": "^3.0.1",
     "hexo-server": "^3.0.0",
     "hexo-theme-butterfly": "^5.7.2",
-    "hexo-theme-landscape": "^1.1.0"
+    "hexo-theme-landscape": "^1.1.0",
+    "marked-footnote": "1.4.0"
+  },
+  "devDependencies": {
+    "prettier": "3.10.1"
   }
 }

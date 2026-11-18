@@ -1,15 +1,13 @@
 ---
 title: C++学习：分别编译与makefile
 date: 2023-11-01 00:10:12
-tags: [C++, Build System, Make]
+tags: [C++, Make]
 categories: 编程
 cover: /img/CppCover.png
 series: C++ 学习
 ---
 
-
 ## 前言
-
 
 一句话解释什么是makefile: 自动编译程序的脚本
 
@@ -19,6 +17,7 @@ series: C++ 学习
 对于C++程序，一个重要的过程便是编译（compile）。
 
 ### 单个源文件的编译
+
 编译如下文件：
 
 ```cpp
@@ -38,16 +37,19 @@ int main()
 ```
 
 编译方式是在`bash`等终端里输入：
+
 ```bash
 g++ -c helloworld.cpp
 g++ -o main helloworld.o
 ```
+
 这样会产生中间文件`helloworld.o`，因为这里只有单个`.o`文件没有要链接的其他文件，可以委托g++一步到位：
+
 ```bash
 g++ -o main helloworld.cpp
 ```
-然后编译器会生成可执行文件 `main`
 
+然后编译器会生成可执行文件 `main`
 
 ### 分别编译 Separate compilation
 
@@ -67,7 +69,7 @@ int main()
 }
 
 // file: Apple.h
-#ifndef APPLE_H  
+#ifndef APPLE_H
 #define APPLE_H
 
 class Apple{
@@ -90,7 +92,7 @@ void Apple::print_apple(){
 
 
 // file: print.h
-#ifndef PRINT_H  
+#ifndef PRINT_H
 #define PRINT_H
 
 void print();
@@ -116,16 +118,17 @@ g++ -c print.cpp
 g++ -c main.cpp
 g++ -o main main.o Apple.o print.o
 ```
+
 太复杂了！如果你正在开发 Linux 操作系统内核, 使命召唤, 虚幻5 这样的大型C/C++软件，你能敲编译命令敲到天亮！
 不同的文件之间相互依赖，牵一发而动全身，如果你修改了其中一个文件，要怎么确保重新编译时**只重新编译那些受修改影响的部件**？
 我们需要一个自动化脚本来减少脱发量。
-
 
 ## Make 和 Makefile
 
 软件`make`是GNU提供的一款自动编译源代码的命令行工具。当你在命令行里使用`make`命令时，`make`会搜索当前目录下最近的makefile文件，并按照上面的指引执行一条条命令，免去手动输入一行行代码了
 
 #### 安装
+
 `make` 属于 `GNU` 生态的 **工具链**（Toolchain）。所以几乎所有Linux发行版都会自带，如果没有，在安装GCC, MinGW, 甚至 MacOS上的 CommandLineTools 时都会安装make。
 在命令行中输入 `make` 命令还是没反应？自行处理环境变量！
 时至今日，`make`基本上可以算作PC的基础设施了
@@ -137,10 +140,10 @@ g++ -o main main.o Apple.o print.o
 对于我们刚刚写的五个文件，现在我们在`makefile`里这样写：
 
 ```makefile
-all : main 
+all : main
 
 main :main.o Apple.o print.o
-    g++ -o main main.o Apple.o print.o    
+    g++ -o main main.o Apple.o print.o
 main.o : main.cpp Apple.o print.o
     g++ -c main.cpp
 Apple.o : Apple.cpp
@@ -150,10 +153,13 @@ print.o : print.cpp Apple.o
 clean :
     rm main main.o Apple.o print.o
 ```
+
 这样，一个简单的makefile就写好了，在命令行输入：
+
 ```bash
 make all
 ```
+
 搞定！
 
 ## 更多技巧

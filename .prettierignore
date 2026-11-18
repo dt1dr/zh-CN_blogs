@@ -1,0 +1,6 @@
+/public/
+/.deploy*/
+/themes/
+
+# Prettier misreads a legacy MathJax block and inserts a stray $$.
+/source/_posts/2025-03-26-GNN-1.md
